@@ -433,8 +433,10 @@ export function removePrivilegeFromRoleTool(server: McpServer, client: Dataverse
     },
     async (params) => {
       try {
+        // Entity-type action parameters must be passed as an inline entity object with its key,
+        // not an @odata.bind annotation — annotations aren't supported in action parameter payloads.
         await client.callBoundAction('roles', params.roleId, 'RemovePrivilegeRole', {
-          'Privilege@odata.bind': `/privileges(${params.privilegeId})`
+          Privilege: { privilegeid: params.privilegeId }
         });
 
         return {
