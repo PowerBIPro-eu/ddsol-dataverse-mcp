@@ -332,11 +332,10 @@ export function addPrivilegesToRoleTool(server: McpServer, client: DataverseClie
       try {
         const privileges = params.privileges.map(p => ({
           PrivilegeId: p.privilegeId,
-          Depth: getDepthValue(p.depth)
+          Depth: p.depth
         }));
 
-        await client.callAction('AddPrivilegesRole', {
-          RoleId: params.roleId,
+        await client.callBoundAction('roles', params.roleId, 'AddPrivilegesRole', {
           Privileges: privileges
         });
 
@@ -363,6 +362,64 @@ export function addPrivilegesToRoleTool(server: McpServer, client: DataverseClie
   );
 }
 
+export function grantTablePrivilegesTool(server: McpServer, client: DataverseClient) {
+  server.registerTool(
+    "grant_table_privileges",
+    {
+      title: "Grant Table Privileges to Dataverse Role",
+      description: "Convenience tool that grants a role access to one or more tables in a single call. Looks up each table's privilege IDs automatically (no need to call get_dataverse_table yourself) and adds the requested privilege types at the given depth to the role.",
+      inputSchema: {
+        roleId: z.string().describe("ID of the role to grant access to"),
+        tableLogicalNames: z.array(z.string()).describe("Logical names of the tables to grant access to, e.g. ['zava_candidate', 'zava_position']"),
+        privilegeTypes: z.array(z.enum(['Create', 'Read', 'Write', 'Delete', 'Assign', 'Share', 'Append', 'AppendTo'])).default(['Create', 'Read', 'Write', 'Delete', 'Assign', 'Share', 'Append', 'AppendTo']).describe("Privilege types to grant on every listed table (default: full access)"),
+        depth: z.enum(['Basic', 'Local', 'Deep', 'Global']).default('Global').describe("Access level to grant for each privilege")
+      }
+    },
+    async (params) => {
+      try {
+        const privileges: any[] = [];
+        const grantedByTable: Record<string, string[]> = {};
+
+        for (const logicalName of params.tableLogicalNames) {
+          const entity = await client.getMetadata<any>(`EntityDefinitions(LogicalName='${logicalName}')?$select=LogicalName,Privileges`);
+          const matched = (entity.Privileges || []).filter((p: any) => params.privilegeTypes.includes(p.PrivilegeType));
+          grantedByTable[logicalName] = matched.map((p: any) => p.PrivilegeType);
+          for (const p of matched) {
+            privileges.push({ PrivilegeId: p.PrivilegeId, Depth: params.depth });
+          }
+        }
+
+        if (privileges.length === 0) {
+          throw new Error('No matching privileges found for the given tables/privilege types.');
+        }
+
+        await client.callBoundAction('roles', params.roleId, 'AddPrivilegesRole', {
+          Privileges: privileges
+        });
+
+        return {
+          content: [
+            {
+              type: "text",
+              text: `Successfully granted ${privileges.length} privilege(s) at '${params.depth}' depth to role.\n\n${JSON.stringify(grantedByTable, null, 2)}`
+            }
+          ]
+        };
+      } catch (error) {
+        return {
+          content: [
+            {
+              type: "text",
+              text: `Error granting table privileges: ${error instanceof Error ? error.message : 'Unknown error'}`
+            }
+          ],
+          isError: true
+        };
+      }
+    }
+  );
+}
+
 export function removePrivilegeFromRoleTool(server: McpServer, client: DataverseClient) {
   server.registerTool(
     "remove_privilege_from_role",
@@ -376,9 +433,8 @@ export function removePrivilegeFromRoleTool(server: McpServer, client: Dataverse
     },
     async (params) => {
       try {
-        await client.callAction('RemovePrivilegeRole', {
-          RoleId: params.roleId,
-          PrivilegeId: params.privilegeId
+        await client.callBoundAction('roles', params.roleId, 'RemovePrivilegeRole', {
+          'Privilege@odata.bind': `/privileges(${params.privilegeId})`
         });
 
         return {
@@ -422,11 +478,10 @@ export function replaceRolePrivilegesTool(server: McpServer, client: DataverseCl
       try {
         const privileges = params.privileges.map(p => ({
           PrivilegeId: p.privilegeId,
-          Depth: getDepthValue(p.depth)
+          Depth: p.depth
         }));
 
-        await client.callAction('ReplacePrivilegesRole', {
-          RoleId: params.roleId,
+        await client.callBoundAction('roles', params.roleId, 'ReplacePrivilegesRole', {
           Privileges: privileges
         });
 

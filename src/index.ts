@@ -1,12 +1,8 @@
 #!/usr/bin/env node
-import dotenv from 'dotenv';
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
 import { DataverseClient } from "./dataverse-client.js";
-
-// Load environment variables from .env file
-dotenv.config();
 import { 
   createTableTool,
   getTableTool,
@@ -44,7 +40,8 @@ import {
   listPublishersTool,
   setSolutionContextTool,
   getSolutionContextTool,
-  clearSolutionContextTool
+  clearSolutionContextTool,
+  addSolutionComponentTool
 } from "./tools/solution-tools.js";
 import {
   createRoleTool,
@@ -59,7 +56,8 @@ import {
   assignRoleToUserTool,
   removeRoleFromUserTool,
   assignRoleToTeamTool,
-  removeRoleFromTeamTool
+  removeRoleFromTeamTool,
+  grantTablePrivilegesTool
 } from "./tools/role-tools.js";
 import {
   createTeamTool,
@@ -110,15 +108,34 @@ import {
 import {
   registerPowerPagesResources
 } from "./resources/powerpages-resources.js";
+import {
+  listDataverseEnvironmentsTool,
+  setDataverseEnvironmentTool,
+  getActiveDataverseEnvironmentTool
+} from "./tools/environment-tools.js";
 
 // Environment variables for Dataverse authentication
-const DATAVERSE_URL = process.env.DATAVERSE_URL;
+// DATAVERSE_URL is optional in device mode: it's just the starting environment;
+// use list_dataverse_environments / set_dataverse_environment to pick/switch at runtime.
+const DATAVERSE_URL = process.env.DATAVERSE_URL || '';
 const CLIENT_ID = process.env.DATAVERSE_CLIENT_ID;
 const CLIENT_SECRET = process.env.DATAVERSE_CLIENT_SECRET;
-const TENANT_ID = process.env.DATAVERSE_TENANT_ID;
+// 'organizations' lets Entra resolve the signing-in user's own tenant automatically,
+// so device-mode setups don't need to know their Tenant ID upfront.
+const TENANT_ID = process.env.DATAVERSE_TENANT_ID || 'organizations';
+const AUTH_MODE = (process.env.DATAVERSE_AUTH_MODE as 'client_secret' | 'device' | undefined) || (CLIENT_SECRET ? 'client_secret' : 'device');
 
-if (!DATAVERSE_URL || !CLIENT_ID || !CLIENT_SECRET || !TENANT_ID) {
-  throw new Error('Missing required environment variables: DATAVERSE_URL, DATAVERSE_CLIENT_ID, DATAVERSE_CLIENT_SECRET, DATAVERSE_TENANT_ID');
+if (!CLIENT_ID) {
+  throw new Error('Missing required environment variable: DATAVERSE_CLIENT_ID');
+}
+if (AUTH_MODE === 'client_secret' && !DATAVERSE_URL) {
+  throw new Error('DATAVERSE_URL is required when DATAVERSE_AUTH_MODE=client_secret');
+}
+if (AUTH_MODE === 'client_secret' && !CLIENT_SECRET) {
+  throw new Error('DATAVERSE_CLIENT_SECRET is required when DATAVERSE_AUTH_MODE=client_secret');
+}
+if (AUTH_MODE === 'client_secret' && !process.env.DATAVERSE_TENANT_ID) {
+  throw new Error('DATAVERSE_TENANT_ID is required when DATAVERSE_AUTH_MODE=client_secret');
 }
 
 // Create MCP server
@@ -132,7 +149,8 @@ const dataverseClient = new DataverseClient({
   dataverseUrl: DATAVERSE_URL,
   clientId: CLIENT_ID,
   clientSecret: CLIENT_SECRET,
-  tenantId: TENANT_ID
+  tenantId: TENANT_ID,
+  authMode: AUTH_MODE
 });
 
 // Register table tools
@@ -175,6 +193,7 @@ listPublishersTool(server, dataverseClient);
 setSolutionContextTool(server, dataverseClient);
 getSolutionContextTool(server, dataverseClient);
 clearSolutionContextTool(server, dataverseClient);
+addSolutionComponentTool(server, dataverseClient);
 
 // Register role tools
 createRoleTool(server, dataverseClient);
@@ -188,6 +207,7 @@ addPrivilegesToRoleTool(server, dataverseClient);
 removePrivilegeFromRoleTool(server, dataverseClient);
 replaceRolePrivilegesTool(server, dataverseClient);
 getRolePrivilegesTool(server, dataverseClient);
+grantTablePrivilegesTool(server, dataverseClient);
 
 // Register role assignment tools
 assignRoleToUserTool(server, dataverseClient);
@@ -249,6 +269,11 @@ registerWebAPIResources(server, dataverseClient);
 
 // Register PowerPages code generation resources
 registerPowerPagesResources(server, dataverseClient);
+
+// Register Dataverse environment discovery/switching tools
+listDataverseEnvironmentsTool(server, dataverseClient);
+setDataverseEnvironmentTool(server, dataverseClient);
+getActiveDataverseEnvironmentTool(server, dataverseClient);
 
 // Start the server
 const transport = new StdioServerTransport();

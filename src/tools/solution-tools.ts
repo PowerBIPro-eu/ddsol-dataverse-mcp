@@ -475,3 +475,54 @@ export function clearSolutionContextTool(server: McpServer, client: DataverseCli
     }
   );
 }
+
+const solutionComponentTypes: Record<string, number> = {
+  Entity: 1, Attribute: 2, Relationship: 3, OptionSet: 9, Role: 20, Privilege: 16, Workflow: 29, WebResource: 61
+};
+
+export function addSolutionComponentTool(server: McpServer, client: DataverseClient) {
+  server.registerTool(
+    "add_solution_component",
+    {
+      title: "Add Component to Dataverse Solution",
+      description: "Adds an existing component (e.g. a security role) to an unmanaged solution using the AddSolutionComponent action. Use this for components like security roles that aren't automatically added via solution context.",
+      inputSchema: {
+        componentId: z.string().describe("ID (GUID) of the component to add, e.g. a roleId"),
+        componentType: z.enum(Object.keys(solutionComponentTypes) as [string, ...string[]]).describe("Type of component being added"),
+        solutionUniqueName: z.string().describe("Unique name of the unmanaged solution to add the component to"),
+        addRequiredComponents: z.boolean().default(false).describe("Whether to also add components required by this component"),
+        doNotIncludeSubcomponents: z.boolean().default(true).describe("Whether to exclude subcomponents")
+      }
+    },
+    async (params) => {
+      try {
+        await client.callAction('AddSolutionComponent', {
+          ComponentId: params.componentId,
+          ComponentType: solutionComponentTypes[params.componentType],
+          SolutionUniqueName: params.solutionUniqueName,
+          AddRequiredComponents: params.addRequiredComponents,
+          DoNotIncludeSubcomponents: params.doNotIncludeSubcomponents
+        });
+
+        return {
+          content: [
+            {
+              type: "text",
+              text: `Successfully added ${params.componentType} component '${params.componentId}' to solution '${params.solutionUniqueName}'.`
+            }
+          ]
+        };
+      } catch (error) {
+        return {
+          content: [
+            {
+              type: "text",
+              text: `Error adding component to solution: ${error instanceof Error ? error.message : 'Unknown error'}`
+            }
+          ],
+          isError: true
+        };
+      }
+    }
+  );
+}
