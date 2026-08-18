@@ -1,9 +1,16 @@
 {
   "name": "@powerbipro-eu/dataverse-mcp-server",
-  "version": "0.2.8",
+  "version": "0.2.9",
   "description": "MCP server for Dataverse schema operations",
   "type": "module",
   "main": "build/index.js",
+  "bin": {
+    "dataverse-mcp-server": "build/index.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/PowerBIPro-eu/ddsol-dataverse-mcp.git"
+  },
   "publishConfig": {
     "registry": "https://npm.pkg.github.com"
   },
