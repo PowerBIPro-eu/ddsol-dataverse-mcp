@@ -477,7 +477,7 @@ export function clearSolutionContextTool(server: McpServer, client: DataverseCli
 }
 
 const solutionComponentTypes: Record<string, number> = {
-  Entity: 1, Attribute: 2, Relationship: 3, OptionSet: 9, Role: 20, Privilege: 16, Workflow: 29, WebResource: 61
+  Entity: 1, Attribute: 2, Relationship: 3, Form: 24, SystemForm: 60, SavedQuery: 26, OptionSet: 9, Role: 20, Privilege: 16, Workflow: 29, WebResource: 61
 };
 
 export function addSolutionComponentTool(server: McpServer, client: DataverseClient) {

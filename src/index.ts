@@ -103,6 +103,23 @@ import {
   convertToAutoNumberTool
 } from "./tools/autonumber-tools.js";
 import {
+  createViewTool,
+  getViewTool,
+  updateViewTool,
+  deleteViewTool,
+  listViewsTool
+} from "./tools/view-tools.js";
+import {
+  createFormTool,
+  getFormTool,
+  updateFormTool,
+  deleteFormTool,
+  listFormsTool
+} from "./tools/form-tools.js";
+import {
+  publishDataverseCustomizationsTool
+} from "./tools/publish-tools.js";
+import {
   registerWebAPIResources
 } from "./resources/webapi-resources.js";
 import {
@@ -274,6 +291,23 @@ registerPowerPagesResources(server, dataverseClient);
 listDataverseEnvironmentsTool(server, dataverseClient);
 setDataverseEnvironmentTool(server, dataverseClient);
 getActiveDataverseEnvironmentTool(server, dataverseClient);
+
+// Register view tools
+createViewTool(server, dataverseClient);
+getViewTool(server, dataverseClient);
+updateViewTool(server, dataverseClient);
+deleteViewTool(server, dataverseClient);
+listViewsTool(server, dataverseClient);
+
+// Register form tools
+createFormTool(server, dataverseClient);
+getFormTool(server, dataverseClient);
+updateFormTool(server, dataverseClient);
+deleteFormTool(server, dataverseClient);
+listFormsTool(server, dataverseClient);
+
+// Register publish tool
+publishDataverseCustomizationsTool(server, dataverseClient);
 
 // Start the server
 const transport = new StdioServerTransport();
