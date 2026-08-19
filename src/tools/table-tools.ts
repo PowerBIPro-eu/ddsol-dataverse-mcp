@@ -92,8 +92,12 @@ export function createTableTool(server: McpServer, client: DataverseClient) {
         const ownershipTypeValue = params.ownershipType === "UserOwned" ? "UserOwned" : "OrganizationOwned";
         
         // Generate primary name attribute logical name if not provided
-        const primaryNameLogicalName = params.primaryNameAttribute || `${logicalName}_name`;
-        const primaryNameSchemaName = generateSchemaName(params.primaryNameAttribute || `${params.displayName} Name`, prefix);
+        // Force-normalize even a caller-supplied name - lowercase, unseparated, per the same rule as any custom column.
+        const primaryNameLogicalName = params.primaryNameAttribute
+          ? params.primaryNameAttribute.toLowerCase().replace(/[^a-z0-9_]/g, '')
+          : `${logicalName}_name`;
+        // SchemaName must equal LogicalName (lowercase, unseparated) for custom columns - never re-case it.
+        const primaryNameSchemaName = primaryNameLogicalName;
 
         const entityDefinition = {
           "@odata.type": "Microsoft.Dynamics.CRM.EntityMetadata",
