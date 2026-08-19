@@ -69,6 +69,9 @@ export function createRelationshipTool(server: McpServer, client: DataverseClien
             throw new Error("For One-to-Many relationships, referencedEntity, referencingEntity, referencingAttributeLogicalName, and referencingAttributeDisplayName are required");
           }
 
+          // Dataverse column SchemaName/LogicalName must be identical and lowercase/unseparated - never trust caller casing.
+          const lookupAttributeName = params.referencingAttributeLogicalName.toLowerCase().replace(/[^a-z0-9_]/g, '');
+
           const cascadeConfig = {
             Assign: getCascadeValue(params.cascadeAssign),
             Delete: getCascadeValue(params.cascadeDelete),
@@ -98,9 +101,9 @@ export function createRelationshipTool(server: McpServer, client: DataverseClien
             IsCustomRelationship: true,
             Lookup: {
               "@odata.type": "Microsoft.Dynamics.CRM.LookupAttributeMetadata",
-              LogicalName: params.referencingAttributeLogicalName,
+              LogicalName: lookupAttributeName,
               // SchemaName must equal LogicalName (lowercase, unseparated) for custom columns - never re-case it.
-              SchemaName: params.referencingAttributeLogicalName,
+              SchemaName: lookupAttributeName,
               DisplayName: createLocalizedLabel(params.referencingAttributeDisplayName),
               RequiredLevel: {
                 Value: "None",
