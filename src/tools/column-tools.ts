@@ -34,10 +34,10 @@ function generateColumnLogicalName(displayName: string, prefix: string): string 
 }
 
 // Helper function to generate schema name from display name and prefix
+// Must always match generateColumnLogicalName exactly - Dataverse column SchemaName and
+// LogicalName are required to be identical (lowercase, unseparated) for custom columns.
 function generateColumnSchemaName(displayName: string, prefix: string): string {
-  // Remove whitespaces and special characters, but preserve original case
-  const cleanName = displayName.replace(/\s+/g, '').replace(/[^a-zA-Z0-9]/g, '');
-  return `${prefix}_${cleanName}`;
+  return generateColumnLogicalName(displayName, prefix);
 }
 
 export function createColumnTool(server: McpServer, client: DataverseClient) {

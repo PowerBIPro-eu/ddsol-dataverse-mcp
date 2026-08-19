@@ -99,7 +99,8 @@ export function createRelationshipTool(server: McpServer, client: DataverseClien
             Lookup: {
               "@odata.type": "Microsoft.Dynamics.CRM.LookupAttributeMetadata",
               LogicalName: params.referencingAttributeLogicalName,
-              SchemaName: params.referencingAttributeLogicalName.charAt(0).toUpperCase() + params.referencingAttributeLogicalName.slice(1),
+              // SchemaName must equal LogicalName (lowercase, unseparated) for custom columns - never re-case it.
+              SchemaName: params.referencingAttributeLogicalName,
               DisplayName: createLocalizedLabel(params.referencingAttributeDisplayName),
               RequiredLevel: {
                 Value: "None",
