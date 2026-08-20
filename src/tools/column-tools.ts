@@ -23,32 +23,17 @@ function createLocalizedLabel(text: string, languageCode: number = 1033): Locali
   };
 }
 
-// Helper function to generate logical name from display name and prefix
-function generateColumnLogicalName(displayName: string, prefix: string): string {
-  // Convert display name to lowercase, remove spaces and special characters
-  const cleanName = displayName.toLowerCase()
-    .replace(/[^a-z0-9\s]/g, '') // Remove special characters except spaces
-    .replace(/\s+/g, ''); // Remove all spaces
-  
-  return `${prefix}_${cleanName}`;
-}
-
-// Helper function to generate schema name from display name and prefix
-// Must always match generateColumnLogicalName exactly - Dataverse column SchemaName and
-// LogicalName are required to be identical (lowercase, unseparated) for custom columns.
-function generateColumnSchemaName(displayName: string, prefix: string): string {
-  return generateColumnLogicalName(displayName, prefix);
-}
-
 export function createColumnTool(server: McpServer, client: DataverseClient) {
   server.registerTool(
     "create_dataverse_column",
     {
       title: "Create Dataverse Column",
-      description: "Creates a new column (field) in a Dataverse table with the specified data type and configuration. Supports various column types including text, numbers, dates, lookups, and choice lists. Use this to add new fields to store specific data in your tables. Requires a solution context to be set first.",
+      description: "Creates a new column (field) in a Dataverse table with the specified data type and configuration. The caller must provide matching schemaName and logicalName values, including the publisher prefix, using its own naming conventions. Requires a solution context to be set first.",
       inputSchema: {
         entityLogicalName: z.string().describe("Logical name of the table to add the column to"),
         displayName: z.string().describe("Display name for the column (e.g., 'Customer Email')"),
+        schemaName: z.string().describe("Complete schema name, including the publisher prefix. Must exactly match logicalName."),
+        logicalName: z.string().describe("Complete logical name, including the publisher prefix. Must exactly match schemaName."),
         description: z.string().optional().describe("Description of the column"),
         columnType: z.enum([
           "String", "Integer", "Decimal", "Money", "Boolean", "DateTime",
@@ -86,15 +71,11 @@ export function createColumnTool(server: McpServer, client: DataverseClient) {
     },
     async (params) => {
       try {
-        // Get the customization prefix from the solution context
-        const prefix = client.getCustomizationPrefix();
-        if (!prefix) {
-          throw new Error('No customization prefix available. Please set a solution context using set_solution_context tool first.');
+        if (!client.getSolutionContext()) {
+          throw new Error('No solution context available. Please set a solution context using set_solution_context tool first.');
         }
 
-        // Generate the logical name and schema name
-        const logicalName = generateColumnLogicalName(params.displayName, prefix);
-        const schemaName = generateColumnSchemaName(params.displayName, prefix);
+        const { logicalName, schemaName } = params;
 
         let attributeDefinition: any = {
           LogicalName: logicalName,
@@ -238,7 +219,7 @@ export function createColumnTool(server: McpServer, client: DataverseClient) {
           content: [
             {
               type: "text",
-              text: `Successfully created column '${logicalName}' with display name '${params.displayName}' of type '${params.columnType}' in table '${params.entityLogicalName}'.\n\nGenerated names:\n- Logical Name: ${logicalName}\n- Schema Name: ${schemaName}\n\nResponse: ${JSON.stringify(result, null, 2)}`
+              text: `Successfully created column '${logicalName}' with display name '${params.displayName}' of type '${params.columnType}' in table '${params.entityLogicalName}'.\n\nProvided names:\n- Logical Name: ${logicalName}\n- Schema Name: ${schemaName}\n\nResponse: ${JSON.stringify(result, null, 2)}`
             }
           ]
         };
@@ -255,17 +236,6 @@ export function createColumnTool(server: McpServer, client: DataverseClient) {
       }
     }
   );
-}
-
-function getStringFormat(format: string): number {
-  const formats: Record<string, number> = {
-    "Email": 0,
-    "Text": 1,
-    "TextArea": 2,
-    "Url": 3,
-    "Phone": 7
-  };
-  return formats[format] || 1;
 }
 
 export function getColumnTool(server: McpServer, client: DataverseClient) {

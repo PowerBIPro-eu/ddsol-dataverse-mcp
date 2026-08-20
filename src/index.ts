@@ -24,6 +24,13 @@ import {
   listRelationshipsTool
 } from "./tools/relationship-tools.js";
 import {
+  createAlternateKeyTool,
+  getAlternateKeyTool,
+  listAlternateKeysTool,
+  deleteAlternateKeyTool,
+  reactivateAlternateKeyTool
+} from "./tools/alternate-key-tools.js";
+import {
   createOptionSetTool,
   getOptionSetTool,
   updateOptionSetTool,
@@ -189,6 +196,13 @@ createRelationshipTool(server, dataverseClient);
 getRelationshipTool(server, dataverseClient);
 deleteRelationshipTool(server, dataverseClient);
 listRelationshipsTool(server, dataverseClient);
+
+// Register alternate key tools
+createAlternateKeyTool(server, dataverseClient);
+getAlternateKeyTool(server, dataverseClient);
+listAlternateKeysTool(server, dataverseClient);
+deleteAlternateKeyTool(server, dataverseClient);
+reactivateAlternateKeyTool(server, dataverseClient);
 
 // Register option set tools
 createOptionSetTool(server, dataverseClient);

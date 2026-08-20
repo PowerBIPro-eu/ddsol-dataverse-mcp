@@ -23,45 +23,17 @@ function createLocalizedLabel(text: string, languageCode: number = 1033): Locali
   };
 }
 
-// Helper function to generate logical name from display name and prefix
-function generateLogicalName(displayName: string, prefix: string): string {
-  // Convert display name to lowercase, remove spaces and special characters
-  const cleanName = displayName.toLowerCase()
-    .replace(/[^a-z0-9\s]/g, '') // Remove special characters except spaces
-    .replace(/\s+/g, ''); // Remove all spaces
-  
-  return `${prefix}_${cleanName}`;
-}
-
-// Helper function to generate schema name from display name and prefix
-function generateSchemaName(displayName: string, prefix: string): string {
-  // Remove whitespaces and special characters, but preserve original case
-  const cleanName = displayName.replace(/\s+/g, '').replace(/[^a-zA-Z0-9]/g, '');
-  return `${prefix}_${cleanName}`;
-}
-
-// Helper function to generate display collection name from display name
-function generateDisplayCollectionName(displayName: string): string {
-  // Simple pluralization - add 's' if it doesn't end with 's', 'es' if it ends with 's', 'x', 'z', 'ch', 'sh'
-  const name = displayName.trim();
-  if (name.endsWith('s') || name.endsWith('x') || name.endsWith('z') ||
-      name.endsWith('ch') || name.endsWith('sh')) {
-    return `${name}es`;
-  } else if (name.endsWith('y') && name.length > 1 && !'aeiou'.includes(name[name.length - 2])) {
-    return `${name.slice(0, -1)}ies`;
-  } else {
-    return `${name}s`;
-  }
-}
-
 export function createTableTool(server: McpServer, client: DataverseClient) {
   server.registerTool(
     "create_dataverse_table",
     {
       title: "Create Dataverse Table",
-      description: "Creates a new custom table in Dataverse with the specified configuration. Use this when you need to create a new entity to store business data. Requires a solution context to be set first.",
+      description: "Creates a new custom table in Dataverse with the specified configuration. The caller must provide all table and primary-name identifiers; this tool does not derive names or pluralize display labels. Requires a solution context to be set first.",
       inputSchema: {
         displayName: z.string().describe("Display name for the table (e.g., 'Test Table')"),
+        displayCollectionName: z.string().describe("Plural display name for the table (e.g., 'Test Tables')"),
+        logicalName: z.string().describe("Complete logical name for the table, including the publisher prefix"),
+        schemaName: z.string().describe("Complete schema name for the table, including the publisher prefix"),
         description: z.string().optional().describe("Description of the table"),
         ownershipType: z.enum(["UserOwned", "OrganizationOwned"]).default("UserOwned").describe("Ownership type of the table"),
         hasActivities: z.boolean().default(false).describe("Whether the table can have activities"),
@@ -72,39 +44,26 @@ export function createTableTool(server: McpServer, client: DataverseClient) {
         isConnectionsEnabled: z.boolean().default(false).describe("Whether connections are enabled"),
         isMailMergeEnabled: z.boolean().default(false).describe("Whether mail merge is enabled"),
         isDocumentManagementEnabled: z.boolean().default(false).describe("Whether document management is enabled"),
-        primaryNameAttribute: z.string().optional().describe("Logical name of the primary name attribute (will be auto-generated if not provided)"),
+        primaryNameDisplayName: z.string().describe("Display name of the primary name attribute"),
+        primaryNameLogicalName: z.string().describe("Complete logical name of the primary name attribute"),
+        primaryNameSchemaName: z.string().describe("Complete schema name of the primary name attribute. Must exactly match primaryNameLogicalName."),
         primaryNameAutoNumberFormat: z.string().optional().describe("AutoNumber format for the primary name column using placeholders like 'PREFIX-{SEQNUM:4}-{RANDSTRING:3}-{DATETIMEUTC:yyyyMMdd}'. If specified, the primary name column will be created as an AutoNumber column.")
       }
     },
     async (params) => {
       try {
-        // Get the customization prefix from the solution context
-        const prefix = client.getCustomizationPrefix();
-        if (!prefix) {
-          throw new Error('No customization prefix available. Please set a solution context using set_solution_context tool first.');
+        if (!client.getSolutionContext()) {
+          throw new Error('No solution context available. Please set a solution context using set_solution_context tool first.');
         }
 
-        // Generate the logical name, schema name, and display collection name
-        const logicalName = generateLogicalName(params.displayName, prefix);
-        const schemaName = generateSchemaName(params.displayName, prefix);
-        const displayCollectionName = generateDisplayCollectionName(params.displayName);
-        
         const ownershipTypeValue = params.ownershipType === "UserOwned" ? "UserOwned" : "OrganizationOwned";
-        
-        // Generate the primary name attribute from the table name when not provided.
-        // Force-normalize a caller-supplied name - lowercase, unseparated, per the same rule as any custom column.
-        const primaryNameLogicalName = params.primaryNameAttribute
-          ? params.primaryNameAttribute.toLowerCase().replace(/[^a-z0-9_]/g, '')
-          : logicalName;
-        // SchemaName must equal LogicalName (lowercase, unseparated) for custom columns - never re-case it.
-        const primaryNameSchemaName = primaryNameLogicalName;
 
         const entityDefinition = {
           "@odata.type": "Microsoft.Dynamics.CRM.EntityMetadata",
-          LogicalName: logicalName,
-          SchemaName: schemaName,
+          LogicalName: params.logicalName,
+          SchemaName: params.schemaName,
           DisplayName: createLocalizedLabel(params.displayName),
-          DisplayCollectionName: createLocalizedLabel(displayCollectionName),
+          DisplayCollectionName: createLocalizedLabel(params.displayCollectionName),
           Description: params.description ? createLocalizedLabel(params.description) : undefined,
           OwnershipType: ownershipTypeValue,
           HasActivities: params.hasActivities,
@@ -114,9 +73,9 @@ export function createTableTool(server: McpServer, client: DataverseClient) {
           Attributes: [
             {
               "@odata.type": "Microsoft.Dynamics.CRM.StringAttributeMetadata",
-              LogicalName: primaryNameLogicalName,
-              SchemaName: primaryNameSchemaName,
-              DisplayName: createLocalizedLabel(params.displayName),
+              LogicalName: params.primaryNameLogicalName,
+              SchemaName: params.primaryNameSchemaName,
+              DisplayName: createLocalizedLabel(params.primaryNameDisplayName),
               Description: createLocalizedLabel(params.primaryNameAutoNumberFormat ? "Primary name attribute (AutoNumber)" : "Primary name attribute"),
               RequiredLevel: {
                 Value: "ApplicationRequired",
@@ -138,7 +97,7 @@ export function createTableTool(server: McpServer, client: DataverseClient) {
           content: [
             {
               type: "text",
-              text: `Successfully created table '${logicalName}' with display name '${params.displayName}'.\n\nGenerated names:\n- Logical Name: ${logicalName}\n- Schema Name: ${schemaName}\n- Display Collection Name: ${displayCollectionName}\n- Primary Name Attribute: ${primaryNameLogicalName}${params.primaryNameAutoNumberFormat ? `\n- AutoNumber Format: ${params.primaryNameAutoNumberFormat}` : ''}\n\nResponse: ${JSON.stringify(result, null, 2)}`
+              text: `Successfully created table '${params.logicalName}' with display name '${params.displayName}'.\n\nProvided values:\n- Logical Name: ${params.logicalName}\n- Schema Name: ${params.schemaName}\n- Display Collection Name: ${params.displayCollectionName}\n- Primary Name Attribute: ${params.primaryNameLogicalName}${params.primaryNameAutoNumberFormat ? `\n- AutoNumber Format: ${params.primaryNameAutoNumberFormat}` : ''}\n\nResponse: ${JSON.stringify(result, null, 2)}`
             }
           ]
         };

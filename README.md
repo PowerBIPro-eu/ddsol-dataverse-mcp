@@ -115,21 +115,21 @@ A Model Context Protocol (MCP) server for Microsoft Dataverse that enables schem
 This MCP server provides comprehensive tools for Dataverse schema management:
 
 ### Table Operations
-- **create_dataverse_table** ✅ **Fully Tested** - **Create Dataverse Table**: Creates a new custom table in Dataverse with the specified configuration. Use this when you need to create a new entity to store business data. Requires a solution context to be set first.
+- **create_dataverse_table** ✅ **Fully Tested** - **Create Dataverse Table**: Creates a new custom table in Dataverse with the specified configuration. The caller must provide complete table and primary-name identifiers plus the plural display name. Requires a solution context to be set first.
 - **get_dataverse_table** ✅ **Fully Tested** - **Get Dataverse Table**: Retrieves detailed information about a specific Dataverse table including its metadata, properties, and configuration. Use this to inspect table definitions and understand table structure.
 - **update_dataverse_table** ✅ **Fully Tested** - **Update Dataverse Table**: Updates the properties and configuration of an existing Dataverse table. Use this to modify table settings like display names, descriptions, or feature enablement (activities, notes, auditing, etc.). Changes are published automatically.
 - **delete_dataverse_table** ✅ **Fully Tested** - **Delete Dataverse Table**: Permanently deletes a custom table from Dataverse. WARNING: This action cannot be undone and will remove all data in the table. Use with extreme caution and only for tables that are no longer needed.
 - **list_dataverse_tables** ✅ **Fully Tested** - **List Dataverse Tables**: Retrieves a list of tables in the Dataverse environment with filtering options. Use this to discover available tables, find custom tables, or get an overview of the data model. Supports filtering by custom/system tables and managed/unmanaged status.
 
 ### Column Operations
-- **create_dataverse_column** ✅ **Fully Tested** - **Create Dataverse Column**: Creates a new column (field) in a Dataverse table with the specified data type and configuration. Supports various column types including text, numbers, dates, lookups, and choice lists. Use this to add new fields to store specific data in your tables. Requires a solution context to be set first.
+- **create_dataverse_column** ✅ **Fully Tested** - **Create Dataverse Column**: Creates a new column (field) in a Dataverse table with the specified data type and configuration. The caller must provide matching, complete `schemaName` and `logicalName` values, including the publisher prefix. Requires a solution context to be set first.
 - **get_dataverse_column** ✅ **Fully Tested** - **Get Dataverse Column**: Retrieves detailed information about a specific column in a Dataverse table, including its data type, properties, and configuration settings. Use this to inspect column definitions and understand field structure.
 - **update_dataverse_column** ✅ **Fully Tested** - **Update Dataverse Column**: Updates the properties and configuration of an existing column in a Dataverse table. Use this to modify column settings like display names, descriptions, required levels, or audit settings. Note that data type cannot be changed after creation.
 - **delete_dataverse_column** ✅ **Fully Tested** - **Delete Dataverse Column**: Permanently deletes a column from a Dataverse table. WARNING: This action cannot be undone and will remove all data stored in this column. Use with extreme caution and only for columns that are no longer needed.
 - **list_dataverse_columns** ✅ **Fully Tested** - **List Dataverse Columns**: Retrieves a list of columns in a specific Dataverse table with filtering options. Use this to discover available fields in a table, find custom columns, or get an overview of the table structure. Supports filtering by custom/system columns and managed/unmanaged status.
 
 ### AutoNumber Column Operations
-- **create_autonumber_column** ✅ **Fully Tested** - **Create AutoNumber Column**: Creates a new AutoNumber column in a Dataverse table with specified format. AutoNumber columns automatically generate alphanumeric strings using sequential numbers, random strings, and datetime placeholders. Requires a solution context to be set first.
+- **create_autonumber_column** ✅ **Fully Tested** - **Create AutoNumber Column**: Creates a new AutoNumber column in a Dataverse table with specified format. The caller must provide matching, complete `schemaName` and `logicalName` values. Requires a solution context to be set first.
 - **update_autonumber_format** ✅ **Fully Tested** - **Update AutoNumber Format**: Updates the AutoNumberFormat of an existing AutoNumber column. This changes how future values will be generated but does not affect existing records.
 - **set_autonumber_seed** ✅ **Fully Tested** - **Set AutoNumber Seed**: Sets the seed value for an AutoNumber column's sequential segment using the SetAutoNumberSeed action. This controls the starting number for future records. Note: Seed values are environment-specific and not included in solutions.
 - **get_autonumber_column** ✅ **Fully Tested** - **Get AutoNumber Column**: Retrieves detailed information about an AutoNumber column including its current format, properties, and configuration.
@@ -141,6 +141,13 @@ This MCP server provides comprehensive tools for Dataverse schema management:
 - **get_dataverse_relationship** ✅ **Fully Tested** - **Get Dataverse Relationship**: Retrieves detailed information about a specific relationship between Dataverse tables, including its configuration, cascade settings, and menu behavior. Use this to inspect relationship definitions and understand table connections.
 - **delete_dataverse_relationship** ✅ **Fully Tested** - **Delete Dataverse Relationship**: Permanently deletes a relationship between Dataverse tables. WARNING: This action cannot be undone and will remove the connection between tables, including any lookup fields for One-to-Many relationships. Use with extreme caution.
 - **list_dataverse_relationships** ✅ **Fully Tested** - **List Dataverse Relationships**: Retrieves a list of relationships in the Dataverse environment with filtering options. Use this to discover table connections, find custom relationships, or get an overview of the data model relationships. Supports filtering by entity, relationship type, and managed/unmanaged status.
+
+### Alternate Key Operations
+- **create_dataverse_alternate_key** - Creates an alternate key from one or more existing table columns. Unique-index creation is asynchronous.
+- **get_dataverse_alternate_key** - Retrieves an alternate key by metadata ID or schema name, including its index status.
+- **list_dataverse_alternate_keys** - Lists alternate keys for a table, including key attributes and index status.
+- **delete_dataverse_alternate_key** - Permanently deletes an alternate key by metadata ID.
+- **reactivate_dataverse_alternate_key** - Restarts index creation for a failed alternate key.
 
 ### Option Set Operations
 - **create_dataverse_optionset** ✅ **Fully Tested** - **Create Dataverse Option Set**: Creates a new global option set (choice list) in Dataverse with predefined options. Use this to create reusable choice lists that can be used across multiple tables and columns. Option sets provide consistent data entry options and improve data quality.
@@ -256,17 +263,22 @@ await use_mcp_tool("dataverse", "set_solution_context", {
   solutionUniqueName: "xyzsolution"
 });
 
-// 4. Create schema objects - they automatically use "xyz" prefix
+// 4. Create schema objects. Read get_solution_context to obtain the publisher prefix.
 await use_mcp_tool("dataverse", "create_dataverse_table", {
-  logicalName: "xyz_project",        // Uses xyz prefix automatically
   displayName: "XYZ Project",
-  displayCollectionName: "XYZ Projects"
+  displayCollectionName: "XYZ Projects",
+  logicalName: "xyz_project",
+  schemaName: "xyz_project",
+  primaryNameDisplayName: "XYZ Project",
+  primaryNameLogicalName: "xyz_projectname",
+  primaryNameSchemaName: "xyz_projectname"
 });
 
 await use_mcp_tool("dataverse", "create_dataverse_column", {
   entityLogicalName: "xyz_project",
-  logicalName: "xyz_description",    // Uses xyz prefix automatically
   displayName: "Description",
+  schemaName: "xyz_description",
+  logicalName: "xyz_description",
   columnType: "Memo"
 });
 ```
@@ -669,90 +681,102 @@ DATAVERSE_TENANT_ID=common-tenant-id
 ### Creating a Custom Table
 
 ```typescript
-// Create a new custom table with automatic naming
-// The system automatically generates:
-// - Logical Name: xyz_project (using customization prefix from solution context)
-// - Schema Name: xyz_Project (prefix lowercase, original case preserved, spaces removed)
-// - Display Collection Name: Projects (auto-pluralized)
-// - Primary Name Attribute: xyz_project_name
+// Create a new custom table with agent-provided identifiers.
 await use_mcp_tool("dataverse", "create_dataverse_table", {
   displayName: "Project",
+  displayCollectionName: "Projects",
+  logicalName: "xyz_project",
+  schemaName: "xyz_project",
+  primaryNameDisplayName: "Project",
+  primaryNameLogicalName: "xyz_projectname",
+  primaryNameSchemaName: "xyz_projectname",
   description: "Custom table for managing projects",
   ownershipType: "UserOwned",
   hasActivities: true,
   hasNotes: true
 });
 
-// Example with minimal parameters (most common usage)
+// Every schema identifier and the plural display name are explicit.
 await use_mcp_tool("dataverse", "create_dataverse_table", {
-  displayName: "Customer Feedback"
+  displayName: "Customer Feedback",
+  displayCollectionName: "Customer Feedback",
+  logicalName: "xyz_customerfeedback",
+  schemaName: "xyz_customerfeedback",
+  primaryNameDisplayName: "Customer Feedback",
+  primaryNameLogicalName: "xyz_customerfeedbackname",
+  primaryNameSchemaName: "xyz_customerfeedbackname"
 });
-// This creates:
-// - Logical Name: xyz_customerfeedback
-// - Schema Name: xyz_CustomerFeedback (prefix lowercase, original case preserved)
-// - Display Collection Name: Customer Feedbacks
-// - Primary Name Attribute: xyz_customerfeedback_name
 ```
-
+**Important**: Before creating tables, set a solution context and read it with `get_solution_context` to obtain the publisher prefix. The caller applies the prefix and provides every required table identifier explicitly.
 **Important**: Before creating tables, ensure you have set a solution context using `set_solution_context` to provide the customization prefix. The system automatically uses the prefix from the active solution's publisher.
 
 ### Adding Columns to a Table
 
 ```typescript
-// String column with email format and automatic naming
-// The system automatically generates:
-// - Logical Name: xyz_contactemail (prefix + lowercase, no spaces)
-// - Schema Name: xyz_ContactEmail (prefix lowercase, original case preserved)
+// String column with agent-provided names.
+// The caller reads the prefix from get_solution_context and applies its naming convention.
 await use_mcp_tool("dataverse", "create_dataverse_column", {
   entityLogicalName: "xyz_project",
   displayName: "Contact Email",
+  schemaName: "xyz_contactemail",
+  logicalName: "xyz_contactemail",
   columnType: "String",
   format: "Email",
   maxLength: 100,
   requiredLevel: "ApplicationRequired"
 });
 
-// Integer column with constraints (generates xyz_priorityscore)
+// Integer column with constraints
 await use_mcp_tool("dataverse", "create_dataverse_column", {
   entityLogicalName: "xyz_project",
   displayName: "Priority Score",
+  schemaName: "xyz_priorityscore",
+  logicalName: "xyz_priorityscore",
   columnType: "Integer",
   minValue: 1,
   maxValue: 10,
   defaultValue: 5
 });
 
-// Boolean column with custom labels (generates xyz_isactive)
+// Boolean column with custom labels
 await use_mcp_tool("dataverse", "create_dataverse_column", {
   entityLogicalName: "xyz_project",
   displayName: "Is Active",
+  schemaName: "xyz_isactive",
+  logicalName: "xyz_isactive",
   columnType: "Boolean",
   trueOptionLabel: "Active",
   falseOptionLabel: "Inactive",
   defaultValue: true
 });
 
-// DateTime column (date only) (generates xyz_startdate)
+// DateTime column (date only)
 await use_mcp_tool("dataverse", "create_dataverse_column", {
   entityLogicalName: "xyz_project",
   displayName: "Start Date",
+  schemaName: "xyz_startdate",
+  logicalName: "xyz_startdate",
   columnType: "DateTime",
   dateTimeFormat: "DateOnly",
   requiredLevel: "ApplicationRequired"
 });
 
-// DateTime column (date and time) (generates xyz_lastmodified)
+// DateTime column (date and time)
 await use_mcp_tool("dataverse", "create_dataverse_column", {
   entityLogicalName: "xyz_project",
   displayName: "Last Modified",
+  schemaName: "xyz_lastmodifiedon",
+  logicalName: "xyz_lastmodifiedon",
   columnType: "DateTime",
   dateTimeFormat: "DateAndTime"
 });
 
-// Picklist column with local options (generates xyz_status)
+// Picklist column with local options
 await use_mcp_tool("dataverse", "create_dataverse_column", {
   entityLogicalName: "xyz_project",
   displayName: "Status",
+  schemaName: "xyz_statuscode",
+  logicalName: "xyz_statuscode",
   columnType: "Picklist",
   options: [
     { value: 1, label: "Planning" },
@@ -762,26 +786,32 @@ await use_mcp_tool("dataverse", "create_dataverse_column", {
   ]
 });
 
-// Picklist column using global option set (generates xyz_projectcolor)
+// Picklist column using global option set
 await use_mcp_tool("dataverse", "create_dataverse_column", {
   entityLogicalName: "xyz_project",
   displayName: "Project Color",
+  schemaName: "xyz_projectcolorcode",
+  logicalName: "xyz_projectcolorcode",
   columnType: "Picklist",
   optionSetName: "xyz_colors"
 });
 
-// Lookup column (generates xyz_account)
+// Lookup column
 await use_mcp_tool("dataverse", "create_dataverse_column", {
   entityLogicalName: "xyz_project",
   displayName: "Account",
+  schemaName: "xyz_accountid",
+  logicalName: "xyz_accountid",
   columnType: "Lookup",
   targetEntity: "account"
 });
 
-// Memo column for long text (generates xyz_description)
+// Memo column for long text
 await use_mcp_tool("dataverse", "create_dataverse_column", {
   entityLogicalName: "xyz_project",
   displayName: "Description",
+  schemaName: "xyz_description",
+  logicalName: "xyz_description",
   columnType: "Memo",
   maxLength: 2000,
   requiredLevel: "Recommended"
@@ -797,6 +827,8 @@ AutoNumber columns automatically generate unique alphanumeric strings using cust
 await use_mcp_tool("dataverse", "create_autonumber_column", {
   entityLogicalName: "xyz_project",
   displayName: "Project Number",
+  schemaName: "xyz_projectno",
+  logicalName: "xyz_projectno",
   autoNumberFormat: "PRJ-{SEQNUM:5}",
   maxLength: 20,
   requiredLevel: "SystemRequired"
@@ -807,6 +839,8 @@ await use_mcp_tool("dataverse", "create_autonumber_column", {
 await use_mcp_tool("dataverse", "create_autonumber_column", {
   entityLogicalName: "xyz_invoice",
   displayName: "Invoice Reference",
+  schemaName: "xyz_invoiceno",
+  logicalName: "xyz_invoiceno",
   autoNumberFormat: "INV-{DATETIMEUTC:yyyyMMdd}-{RANDSTRING:4}",
   maxLength: 30,
   description: "Auto-generated invoice reference number"
@@ -817,6 +851,8 @@ await use_mcp_tool("dataverse", "create_autonumber_column", {
 await use_mcp_tool("dataverse", "create_autonumber_column", {
   entityLogicalName: "xyz_order",
   displayName: "Order Code",
+  schemaName: "xyz_orderno",
+  logicalName: "xyz_orderno",
   autoNumberFormat: "ORD-{DATETIMEUTC:yyyy}-{SEQNUM:4}-{RANDSTRING:2}",
   maxLength: 25,
   requiredLevel: "ApplicationRequired"
@@ -909,6 +945,12 @@ You can create tables with AutoNumber primary name columns directly:
 // Create a table with AutoNumber primary name
 await use_mcp_tool("dataverse", "create_dataverse_table", {
   displayName: "Support Ticket",
+  displayCollectionName: "Support Tickets",
+  logicalName: "xyz_supportticket",
+  schemaName: "xyz_supportticket",
+  primaryNameDisplayName: "Support Ticket #",
+  primaryNameLogicalName: "xyz_supportticketno",
+  primaryNameSchemaName: "xyz_supportticketno",
   description: "Customer support tickets with auto-generated ticket numbers",
   primaryNameAutoNumberFormat: "TICKET-{DATETIMEUTC:yyyyMM}-{SEQNUM:4}",
   hasActivities: true,
@@ -919,6 +961,12 @@ await use_mcp_tool("dataverse", "create_dataverse_table", {
 // Create a project table with year-based numbering
 await use_mcp_tool("dataverse", "create_dataverse_table", {
   displayName: "Project",
+  displayCollectionName: "Projects",
+  logicalName: "xyz_project",
+  schemaName: "xyz_project",
+  primaryNameDisplayName: "Project #",
+  primaryNameLogicalName: "xyz_projectno",
+  primaryNameSchemaName: "xyz_projectno",
   description: "Projects with auto-generated project codes",
   primaryNameAutoNumberFormat: "PRJ-{DATETIMEUTC:yyyy}-{SEQNUM:5}",
   ownershipType: "UserOwned"
@@ -962,6 +1010,7 @@ await use_mcp_tool("dataverse", "create_dataverse_relationship", {
   referencedEntity: "account",
   referencingEntity: "new_project",
   referencingAttributeLogicalName: "new_accountid",
+  referencingAttributeSchemaName: "new_accountid",
   referencingAttributeDisplayName: "Account",
   cascadeDelete: "RemoveLink"
 });

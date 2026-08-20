@@ -36,13 +36,14 @@ export function createRelationshipTool(server: McpServer, client: DataverseClien
         // One-to-Many specific fields
         referencedEntity: z.string().optional().describe("Referenced (parent) entity logical name for One-to-Many relationships"),
         referencingEntity: z.string().optional().describe("Referencing (child) entity logical name for One-to-Many relationships"),
-        referencingAttributeLogicalName: z.string().optional().describe("Logical name for the lookup attribute to be created"),
+        referencingAttributeLogicalName: z.string().optional().describe("Complete logical name for the lookup attribute to be created"),
+        referencingAttributeSchemaName: z.string().optional().describe("Complete schema name for the lookup attribute. Must exactly match referencingAttributeLogicalName."),
         referencingAttributeDisplayName: z.string().optional().describe("Display name for the lookup attribute"),
         
         // Many-to-Many specific fields
         entity1LogicalName: z.string().optional().describe("First entity logical name for Many-to-Many relationships"),
         entity2LogicalName: z.string().optional().describe("Second entity logical name for Many-to-Many relationships"),
-        intersectEntityName: z.string().optional().describe("Name for the intersect entity (auto-generated if not provided)"),
+        intersectEntityName: z.string().optional().describe("Name for the intersect entity"),
         
         // Cascade configuration for One-to-Many
         cascadeAssign: z.enum(["NoCascade", "Cascade", "Active", "UserOwned", "RemoveLink", "Restrict"]).default("NoCascade").describe("Cascade behavior for assign operations"),
@@ -65,12 +66,9 @@ export function createRelationshipTool(server: McpServer, client: DataverseClien
     async (params) => {
       try {
         if (params.relationshipType === "OneToMany") {
-          if (!params.referencedEntity || !params.referencingEntity || !params.referencingAttributeLogicalName || !params.referencingAttributeDisplayName) {
-            throw new Error("For One-to-Many relationships, referencedEntity, referencingEntity, referencingAttributeLogicalName, and referencingAttributeDisplayName are required");
+          if (!params.referencedEntity || !params.referencingEntity || !params.referencingAttributeLogicalName || !params.referencingAttributeSchemaName || !params.referencingAttributeDisplayName) {
+            throw new Error("For One-to-Many relationships, referencedEntity, referencingEntity, referencingAttributeLogicalName, referencingAttributeSchemaName, and referencingAttributeDisplayName are required");
           }
-
-          // Dataverse column SchemaName/LogicalName must be identical and lowercase/unseparated - never trust caller casing.
-          const lookupAttributeName = params.referencingAttributeLogicalName.toLowerCase().replace(/[^a-z0-9_]/g, '');
 
           const cascadeConfig = {
             Assign: getCascadeValue(params.cascadeAssign),
@@ -101,9 +99,8 @@ export function createRelationshipTool(server: McpServer, client: DataverseClien
             IsCustomRelationship: true,
             Lookup: {
               "@odata.type": "Microsoft.Dynamics.CRM.LookupAttributeMetadata",
-              LogicalName: lookupAttributeName,
-              // SchemaName must equal LogicalName (lowercase, unseparated) for custom columns - never re-case it.
-              SchemaName: lookupAttributeName,
+              LogicalName: params.referencingAttributeLogicalName,
+              SchemaName: params.referencingAttributeSchemaName,
               DisplayName: createLocalizedLabel(params.referencingAttributeDisplayName),
               RequiredLevel: {
                 Value: "None",
@@ -127,11 +124,9 @@ export function createRelationshipTool(server: McpServer, client: DataverseClien
           };
 
         } else { // ManyToMany
-          if (!params.entity1LogicalName || !params.entity2LogicalName) {
-            throw new Error("For Many-to-Many relationships, entity1LogicalName and entity2LogicalName are required");
+          if (!params.entity1LogicalName || !params.entity2LogicalName || !params.intersectEntityName) {
+            throw new Error("For Many-to-Many relationships, entity1LogicalName, entity2LogicalName, and intersectEntityName are required");
           }
-
-          const intersectName = params.intersectEntityName || `${params.entity1LogicalName}_${params.entity2LogicalName}`;
 
           const menuConfig1 = {
             Behavior: getMenuBehaviorValue(params.menuBehavior),
@@ -154,7 +149,7 @@ export function createRelationshipTool(server: McpServer, client: DataverseClien
             Entity1AssociatedMenuConfiguration: menuConfig1,
             Entity2LogicalName: params.entity2LogicalName,
             Entity2AssociatedMenuConfiguration: menuConfig2,
-            IntersectEntityName: intersectName,
+            IntersectEntityName: params.intersectEntityName,
             IsValidForAdvancedFind: params.isValidForAdvancedFind,
             IsCustomRelationship: true
           };
