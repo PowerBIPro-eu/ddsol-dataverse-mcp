@@ -147,6 +147,19 @@ import {
   deleteDataverseRecordsTool
 } from "./tools/record-tools.js";
 import {
+  createModelDrivenAppTool,
+  getModelDrivenAppTool,
+  listModelDrivenAppsTool,
+  updateModelDrivenAppTool,
+  deleteModelDrivenAppTool,
+  addModelDrivenAppComponentsTool,
+  removeModelDrivenAppComponentsTool,
+  getModelDrivenAppComponentsTool,
+  getModelDrivenAppSitemapTool,
+  updateModelDrivenAppSitemapTool,
+  validateModelDrivenAppTool
+} from "./tools/model-driven-app-tools.js";
+import {
   registerWebAPIResources
 } from "./resources/webapi-resources.js";
 import {
@@ -362,6 +375,19 @@ createDataverseRecordTool(server, dataverseClient);
 createDataverseRecordsTool(server, dataverseClient);
 updateDataverseRecordsTool(server, dataverseClient);
 deleteDataverseRecordsTool(server, dataverseClient);
+
+// Register model-driven app tools
+createModelDrivenAppTool(server, dataverseClient);
+getModelDrivenAppTool(server, dataverseClient);
+listModelDrivenAppsTool(server, dataverseClient);
+updateModelDrivenAppTool(server, dataverseClient);
+deleteModelDrivenAppTool(server, dataverseClient);
+addModelDrivenAppComponentsTool(server, dataverseClient);
+removeModelDrivenAppComponentsTool(server, dataverseClient);
+getModelDrivenAppComponentsTool(server, dataverseClient);
+getModelDrivenAppSitemapTool(server, dataverseClient);
+updateModelDrivenAppSitemapTool(server, dataverseClient);
+validateModelDrivenAppTool(server, dataverseClient);
 
 // Start the server
 const transport = new StdioServerTransport();

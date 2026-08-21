@@ -28,6 +28,8 @@ A Model Context Protocol (MCP) server for Microsoft Dataverse that enables schem
 
 ✅ **Business Record Creation** - Create individual Dataverse business records with structured payloads and lookup bindings
 
+✅ **Model-Driven App Management** - Create, configure, validate, and maintain model-driven apps, their components, and their sitemaps
+
 ✅ **Professional Integration** - OAuth2 authentication, comprehensive error handling, and enterprise-ready deployment
 
 ✅ **Production Ready** - Comprehensive testing completed with 7 critical bugs found and fixed, 100% tool coverage achieved
@@ -232,6 +234,15 @@ This MCP server provides comprehensive tools for Dataverse schema management:
 - **delete_dataverse_records** - **Delete Dataverse Records**: Deletes up to 25 identified records in one explicit entity set. A successful Dataverse delete response confirms each deletion. Requires `confirmDelete: true`; deletion cannot be undone.
 
 Bulk tools process records sequentially. If a batch fails partway through, the error response includes the records confirmed as completed before the failure so callers can reconcile the partial result.
+
+### Model-Driven App Operations
+- **create_dataverse_model_driven_app** - Creates and re-fetches a model-driven `appmodule` in the active solution. Requires the approved Dataverse `clientType`, `formFactor`, and `navigationType` values plus `confirmCreate: true`.
+- **get_dataverse_model_driven_app** / **list_dataverse_model_driven_apps** / **update_dataverse_model_driven_app** / **delete_dataverse_model_driven_app** - Inspect and manage model-driven app records. Updates re-fetch the app; deletion requires `confirmDelete: true`.
+- **add_dataverse_model_driven_app_components** / **remove_dataverse_model_driven_app_components** / **get_dataverse_model_driven_app_components** - Manage app contents through the Dataverse `AddAppComponents`, `RemoveAppComponents`, and `RetrieveAppComponents` operations. Components must include their Dataverse `@odata.type` and key property.
+- **get_dataverse_model_driven_app_sitemap** / **update_dataverse_model_driven_app_sitemap** - Read and update a sitemap's complete `sitemapxml`. Updating a sitemap requires `confirmUpdate: true` and must be followed by an explicitly requested customization publish before it is visible in the app.
+- **validate_dataverse_model_driven_app** - Runs Dataverse `ValidateApp` without publishing the app.
+
+Model-driven app changes should be planned and approved before mutation. Use `validate_dataverse_model_driven_app` after changing app components or navigation; `publish_dataverse_customizations` remains a separate, explicit user decision.
 
 ### WebAPI Call Generator
 - **generate_webapi_call** ✅ **Fully Tested** - **Generate Dataverse WebAPI Call**: Generate HTTP requests, curl commands, and JavaScript examples for Dataverse WebAPI operations. Supports all CRUD operations, associations, actions, and functions with proper OData query parameters and headers.
