@@ -131,6 +131,13 @@ import {
   listFormsTool
 } from "./tools/form-tools.js";
 import {
+  createChartTool,
+  getChartTool,
+  listChartsTool,
+  updateChartTool,
+  deleteChartTool
+} from "./tools/chart-tools.js";
+import {
   publishDataverseCustomizationsTool
 } from "./tools/publish-tools.js";
 import {
@@ -333,6 +340,13 @@ getFormTool(server, dataverseClient);
 updateFormTool(server, dataverseClient);
 deleteFormTool(server, dataverseClient);
 listFormsTool(server, dataverseClient);
+
+// Register chart tools
+createChartTool(server, dataverseClient);
+getChartTool(server, dataverseClient);
+listChartsTool(server, dataverseClient);
+updateChartTool(server, dataverseClient);
+deleteChartTool(server, dataverseClient);
 
 // Register publish tool
 publishDataverseCustomizationsTool(server, dataverseClient);

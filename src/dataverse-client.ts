@@ -678,13 +678,17 @@ export class DataverseClient {
     return response.data;
   }
 
-  async post<T = any>(endpoint: string, data?: any): Promise<T> {
-    const response: AxiosResponse<T> = await this.httpClient.post(endpoint, data);
+  async post<T = any>(endpoint: string, data?: any, additionalHeaders?: Record<string, string>): Promise<T> {
+    const response: AxiosResponse<T> = await this.httpClient.post(endpoint, data, {
+      headers: additionalHeaders
+    });
     return response.data;
   }
 
-  async patch<T = any>(endpoint: string, data?: any): Promise<T> {
-    const response: AxiosResponse<T> = await this.httpClient.patch(endpoint, data);
+  async patch<T = any>(endpoint: string, data?: any, additionalHeaders?: Record<string, string>): Promise<T> {
+    const response: AxiosResponse<T> = await this.httpClient.patch(endpoint, data, {
+      headers: additionalHeaders
+    });
     return response.data;
   }
 

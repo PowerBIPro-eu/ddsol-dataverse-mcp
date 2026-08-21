@@ -149,6 +149,13 @@ This MCP server provides comprehensive tools for Dataverse schema management:
 - **delete_dataverse_status_reason** - Deletes a custom Status Reason by numeric value.
 - **set_dataverse_status_reason_default** - Sets the default Status Reason for the Active or Inactive state.
 
+### Chart Operations
+- **create_dataverse_chart** - Creates a system or user chart using explicit data and presentation XML.
+- **get_dataverse_chart** - Retrieves a system or user chart by GUID.
+- **list_dataverse_charts** - Lists system or user charts, optionally filtered by table.
+- **update_dataverse_chart** - Updates chart metadata or XML definitions.
+- **delete_dataverse_chart** - Deletes a system or user chart by GUID.
+
 ### Alternate Key Operations
 - **create_dataverse_alternate_key** - Creates an alternate key from one or more existing table columns. Unique-index creation is asynchronous.
 - **get_dataverse_alternate_key** - Retrieves an alternate key by metadata ID or schema name, including its index status.
