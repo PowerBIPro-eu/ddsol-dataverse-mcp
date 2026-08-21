@@ -867,7 +867,7 @@ export class DataverseClient {
     const globalActions = [
       'PublishXml', 'PublishAllXml', 'ImportSolution', 'ExportSolution',
       'InsertOptionValue', 'UpdateOptionValue', 'DeleteOptionValue', 'OrderOption',
-      'InsertStatusValue', 'UpdateStatusValue', 'DeleteStatusValue', 'UpdateStateValue',
+      'InsertStatusValue', 'UpdateStateValue',
       'AddSolutionComponent', 'RemoveSolutionComponent'
     ];
     const actionUrl = globalActions.includes(actionName) ? actionName : `Microsoft.Dynamics.CRM.${actionName}`;

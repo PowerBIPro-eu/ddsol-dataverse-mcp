@@ -150,17 +150,17 @@ export function createColumnTool(server: McpServer, client: DataverseClient) {
           case "DateTime":
             attributeDefinition["@odata.type"] = "Microsoft.Dynamics.CRM.DateTimeAttributeMetadata";
             attributeDefinition.DateTimeBehavior = { Value: params.dateTimeBehavior };
-            attributeDefinition.Format = params.dateTimeBehavior === "DateOnly" || params.dateTimeFormat === "DateOnly" ? 0 : 1;
+            attributeDefinition.Format = params.dateTimeBehavior === "DateOnly" || params.dateTimeFormat === "DateOnly" ? "DateOnly" : "DateAndTime";
             break;
 
           case "Memo":
             attributeDefinition["@odata.type"] = "Microsoft.Dynamics.CRM.MemoAttributeMetadata";
             attributeDefinition.MaxLength = params.maxLength || 2000;
             if (params.memoFormat === "RichText") {
-              attributeDefinition.Format = 9;
+              attributeDefinition.Format = "RichText";
               attributeDefinition.FormatName = { Value: "RichText" };
             } else {
-              attributeDefinition.Format = 2;
+              attributeDefinition.Format = "TextArea";
               attributeDefinition.FormatName = { Value: "TextArea" };
             }
             break;
@@ -405,10 +405,10 @@ export function updateColumnTool(server: McpServer, client: DataverseClient) {
             throw new Error("memoFormat can only be updated on a Memo column.");
           }
           if (params.memoFormat === "RichText") {
-            updatedAttribute.Format = 9;
+            updatedAttribute.Format = "RichText";
             updatedAttribute.FormatName = { Value: "RichText" };
           } else {
-            updatedAttribute.Format = 2;
+            updatedAttribute.Format = "TextArea";
             updatedAttribute.FormatName = { Value: "TextArea" };
           }
         }
@@ -435,7 +435,7 @@ export function updateColumnTool(server: McpServer, client: DataverseClient) {
             throw new Error("DateOnly behavior requires dateTimeFormat to be DateOnly.");
           }
           if (params.dateTimeFormat) {
-            updatedAttribute.Format = params.dateTimeFormat === "DateOnly" ? 0 : 1;
+            updatedAttribute.Format = params.dateTimeFormat;
             updatedAttribute.FormatName = { Value: params.dateTimeFormat };
           }
         }

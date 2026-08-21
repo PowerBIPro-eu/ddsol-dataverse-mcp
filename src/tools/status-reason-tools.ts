@@ -21,19 +21,16 @@ function createLocalizedLabel(text: string, languageCode = 1033) {
 }
 
 function statusReasonEndpoint(entityLogicalName: string, attributeLogicalName: string): string {
-  return `EntityDefinitions(LogicalName='${entityLogicalName}')/Attributes(LogicalName='${attributeLogicalName}')`;
+  const attributeType = attributeLogicalName === STATUS_ATTRIBUTE_LOGICAL_NAME
+    ? "StatusAttributeMetadata"
+    : "StateAttributeMetadata";
+  return `EntityDefinitions(LogicalName='${entityLogicalName}')/Attributes(LogicalName='${attributeLogicalName}')/Microsoft.Dynamics.CRM.${attributeType}?$expand=OptionSet`;
 }
 
 async function getStatusMetadata(client: DataverseClient, entityLogicalName: string): Promise<any> {
   const metadata = await client.getMetadata<any>(
     statusReasonEndpoint(entityLogicalName, STATUS_ATTRIBUTE_LOGICAL_NAME)
   );
-
-  const odataType = String(metadata?.["@odata.type"] || "");
-  const attributeType = metadata?.AttributeType;
-  if (attributeType !== 13 && !odataType.includes("StatusAttributeMetadata")) {
-    throw new Error(`Table '${entityLogicalName}' does not expose a Status Reason (statuscode) system column.`);
-  }
 
   return metadata;
 }
@@ -158,14 +155,15 @@ export function updateStatusReasonTool(server: McpServer, client: DataverseClien
         }
         await getStatusMetadata(client, params.entityLogicalName);
 
-        await client.callAction("UpdateStatusValue", {
+        await client.callAction("UpdateOptionValue", {
           EntityLogicalName: params.entityLogicalName,
           AttributeLogicalName: STATUS_ATTRIBUTE_LOGICAL_NAME,
           Value: params.value,
           MergeLabels: true,
           ...(params.label && { Label: createLocalizedLabel(params.label) }),
           ...(params.description && { Description: createLocalizedLabel(params.description) }),
-          ...(params.color && { Color: params.color })
+          ...(params.color && { Color: params.color }),
+          SolutionUniqueName: client.getSolutionUniqueName()
         });
 
         return {
@@ -201,10 +199,11 @@ export function deleteStatusReasonTool(server: McpServer, client: DataverseClien
     async (params) => {
       try {
         await getStatusMetadata(client, params.entityLogicalName);
-        await client.callAction("DeleteStatusValue", {
+        await client.callAction("DeleteOptionValue", {
           EntityLogicalName: params.entityLogicalName,
           AttributeLogicalName: STATUS_ATTRIBUTE_LOGICAL_NAME,
-          Value: params.value
+          Value: params.value,
+          SolutionUniqueName: client.getSolutionUniqueName()
         });
 
         return {
