@@ -337,7 +337,10 @@ export function updateColumnTool(server: McpServer, client: DataverseClient) {
         isAuditEnabled: z.boolean().optional().describe("Whether auditing is enabled for this column"),
         isValidForAdvancedFind: z.boolean().optional().describe("Whether the column appears in Advanced Find"),
         isValidForCreate: z.boolean().optional().describe("Whether the column can be set during create"),
-        isValidForUpdate: z.boolean().optional().describe("Whether the column can be updated")
+        isValidForUpdate: z.boolean().optional().describe("Whether the column can be updated"),
+        memoFormat: z.enum(["PlainText", "RichText"]).optional().describe("New format for a Memo column. RichText stores formatted HTML; PlainText creates a standard multiline text field."),
+        dateTimeBehavior: z.enum(["UserLocal", "TimeZoneIndependent", "DateOnly"]).optional().describe("New storage behavior for a DateTime column. Dataverse permits behavior changes only when the column is customizable and its current behavior supports the requested transition."),
+        dateTimeFormat: z.enum(["DateOnly", "DateAndTime"]).optional().describe("New display format for a DateTime column")
       }
     },
     async (params) => {
@@ -352,6 +355,11 @@ export function updateColumnTool(server: McpServer, client: DataverseClient) {
           ...currentAttribute,
           "@odata.type": currentAttribute["@odata.type"]
         };
+        const attributeType = (currentAttribute as any).AttributeType;
+        const attributeTypeName = (currentAttribute as any).AttributeTypeName?.Value;
+        const odataType = currentAttribute["@odata.type"] || "";
+        const isDateTime = attributeType === 2 || attributeTypeName === "DateTimeType" || odataType.includes("DateTimeAttributeMetadata");
+        const isMemo = attributeType === 7 || attributeTypeName === "MemoType" || odataType.includes("MemoAttributeMetadata");
 
         // Update only the specified properties
         if (params.displayName) {
@@ -383,6 +391,45 @@ export function updateColumnTool(server: McpServer, client: DataverseClient) {
         if (params.isValidForUpdate !== undefined) {
           updatedAttribute.IsValidForUpdate = params.isValidForUpdate;
         }
+        if (params.memoFormat) {
+          if (!isMemo) {
+            throw new Error("memoFormat can only be updated on a Memo column.");
+          }
+          if (params.memoFormat === "RichText") {
+            updatedAttribute.Format = 9;
+            updatedAttribute.FormatName = { Value: "RichText" };
+          } else {
+            updatedAttribute.Format = 2;
+            updatedAttribute.FormatName = { Value: "TextArea" };
+          }
+        }
+        if (params.dateTimeBehavior || params.dateTimeFormat) {
+          if (!isDateTime) {
+            throw new Error("dateTimeBehavior and dateTimeFormat can only be updated on a DateTime column.");
+          }
+
+          const currentBehavior = (currentAttribute as any).DateTimeBehavior?.Value;
+          const canChangeBehavior = (currentAttribute as any).CanChangeDateTimeBehavior?.Value;
+          if (params.dateTimeBehavior && params.dateTimeBehavior !== currentBehavior) {
+            if (canChangeBehavior === false) {
+              throw new Error(`DateTime behavior for column '${params.logicalName}' cannot be changed.`);
+            }
+            if (currentBehavior === "DateOnly" || currentBehavior === "TimeZoneIndependent") {
+              throw new Error(`DateTime behavior cannot be changed from '${currentBehavior}' to '${params.dateTimeBehavior}'. Dataverse only permits supported transitions from UserLocal.`);
+            }
+            updatedAttribute.DateTimeBehavior = { Value: params.dateTimeBehavior };
+          }
+
+          const effectiveBehavior = params.dateTimeBehavior || currentBehavior;
+          const effectiveFormat = params.dateTimeFormat || (currentAttribute as any).FormatName?.Value;
+          if (effectiveBehavior === "DateOnly" && effectiveFormat === "DateAndTime") {
+            throw new Error("DateOnly behavior requires dateTimeFormat to be DateOnly.");
+          }
+          if (params.dateTimeFormat) {
+            updatedAttribute.Format = params.dateTimeFormat === "DateOnly" ? 0 : 1;
+            updatedAttribute.FormatName = { Value: params.dateTimeFormat };
+          }
+        }
 
         // Use PUT method with MSCRM.MergeLabels header as per Microsoft documentation
         await client.putMetadata(
@@ -392,6 +439,12 @@ export function updateColumnTool(server: McpServer, client: DataverseClient) {
             'MSCRM.MergeLabels': 'true'
           }
         );
+
+        if (params.dateTimeBehavior || params.dateTimeFormat) {
+          await client.callAction("PublishXml", {
+            ParameterXml: `<importexportxml><entities><entity>${params.entityLogicalName}</entity></entities></importexportxml>`
+          });
+        }
 
         return {
           content: [
