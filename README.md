@@ -318,7 +318,7 @@ The MCP server supports all major Dataverse column types with comprehensive conf
 | **DateTime** | ✅ Implemented | ✅ **Fully Verified** | Date and time fields | `dateTimeFormat` (DateOnly, DateAndTime) |
 | **Picklist** | ✅ Implemented | ✅ **Fully Verified** | Choice fields (local & global) | `options` (for local), `optionSetName` (for global) |
 | **Lookup** | ✅ Implemented | ✅ **Fully Verified** | References to other tables | `targetEntity` |
-| **Memo** | ✅ Implemented | ✅ **Fully Verified** | Long text fields | `maxLength` |
+| **Memo** | ✅ Implemented | ✅ **Fully Verified** | Long text fields, including rich text | `maxLength`, `memoFormat` (PlainText, RichText) |
 | **Double** | ✅ Implemented | ✅ **Fully Verified** | Floating-point numbers | `precision`, `minValue`, `maxValue` |
 | **BigInt** | ✅ Implemented | ✅ **Fully Verified** | Large integer values | None |
 
@@ -815,6 +815,17 @@ await use_mcp_tool("dataverse", "create_dataverse_column", {
   columnType: "Memo",
   maxLength: 2000,
   requiredLevel: "Recommended"
+});
+
+// Rich-text Memo column. Dataverse stores formatted HTML in this field.
+await use_mcp_tool("dataverse", "create_dataverse_column", {
+  entityLogicalName: "xyz_project",
+  displayName: "Formatted Notes",
+  schemaName: "xyz_formattednotes",
+  logicalName: "xyz_formattednotes",
+  columnType: "Memo",
+  memoFormat: "RichText",
+  maxLength: 10000
 });
 ```
 

@@ -47,6 +47,7 @@ export function createColumnTool(server: McpServer, client: DataverseClient) {
         // String-specific options
         maxLength: z.number().optional().describe("Maximum length for string columns (default: 100)"),
         format: z.enum(["Email", "Text", "TextArea", "Url", "Phone"]).optional().describe("Format for string columns"),
+        memoFormat: z.enum(["PlainText", "RichText"]).default("PlainText").describe("Format for Memo columns. RichText stores formatted HTML; PlainText creates a standard multiline text field."),
         // Integer-specific options
         minValue: z.number().optional().describe("Minimum value for integer/decimal columns"),
         maxValue: z.number().optional().describe("Maximum value for integer/decimal columns"),
@@ -153,6 +154,13 @@ export function createColumnTool(server: McpServer, client: DataverseClient) {
           case "Memo":
             attributeDefinition["@odata.type"] = "Microsoft.Dynamics.CRM.MemoAttributeMetadata";
             attributeDefinition.MaxLength = params.maxLength || 2000;
+            if (params.memoFormat === "RichText") {
+              attributeDefinition.Format = 9;
+              attributeDefinition.FormatName = { Value: "RichText" };
+            } else {
+              attributeDefinition.Format = 2;
+              attributeDefinition.FormatName = { Value: "TextArea" };
+            }
             break;
 
           case "Double":
