@@ -55,6 +55,7 @@ export function createColumnTool(server: McpServer, client: DataverseClient) {
         precision: z.number().optional().describe("Precision for decimal columns (default: 2)"),
         // DateTime-specific options
         dateTimeFormat: z.enum(["DateOnly", "DateAndTime"]).optional().describe("Format for datetime columns"),
+        dateTimeBehavior: z.enum(["UserLocal", "TimeZoneIndependent", "DateOnly"]).default("UserLocal").describe("Storage behavior for DateTime columns. UserLocal adjusts displayed values for each user's time zone; TimeZoneIndependent preserves the entered date/time without time-zone adjustment; DateOnly stores only the date."),
         // Boolean-specific options
         trueOptionLabel: z.string().optional().describe("Label for true option in boolean columns (default: 'Yes')"),
         falseOptionLabel: z.string().optional().describe("Label for false option in boolean columns (default: 'No')"),
@@ -147,8 +148,8 @@ export function createColumnTool(server: McpServer, client: DataverseClient) {
 
           case "DateTime":
             attributeDefinition["@odata.type"] = "Microsoft.Dynamics.CRM.DateTimeAttributeMetadata";
-            // Remove Format property for now to avoid enum issues
-            attributeDefinition.DateTimeBehavior = { Value: "UserLocal" };
+            attributeDefinition.DateTimeBehavior = { Value: params.dateTimeBehavior };
+            attributeDefinition.Format = params.dateTimeBehavior === "DateOnly" || params.dateTimeFormat === "DateOnly" ? 0 : 1;
             break;
 
           case "Memo":
