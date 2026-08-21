@@ -5,6 +5,11 @@ All notable changes to the Dataverse MCP Server project will be documented in th
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- `create_dataverse_record` creates one business-data record in an explicit Dataverse entity set. It supports structured record payloads, `@odata.bind` lookup bindings, and requires `confirmCreate: true` before writing data.
+
 ## [0.2.8]
 
 ### Enhanced

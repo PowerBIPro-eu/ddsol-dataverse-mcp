@@ -1,6 +1,6 @@
 {
   "name": "@powerbipro-eu/dataverse-mcp-server",
-  "version": "0.2.21",
+  "version": "0.2.22",
   "description": "MCP server for Dataverse schema operations",
   "type": "module",
   "main": "build/index.js",

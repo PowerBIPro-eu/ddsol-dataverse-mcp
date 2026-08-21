@@ -26,6 +26,8 @@ A Model Context Protocol (MCP) server for Microsoft Dataverse that enables schem
 
 ✅ **AutoNumber Column Management** - Create and manage AutoNumber columns with customizable format patterns for automatic serial numbers, reference codes, and unique identifiers
 
+✅ **Business Record Creation** - Create individual Dataverse business records with structured payloads and lookup bindings
+
 ✅ **Professional Integration** - OAuth2 authentication, comprehensive error handling, and enterprise-ready deployment
 
 ✅ **Production Ready** - Comprehensive testing completed with 7 critical bugs found and fixed, 100% tool coverage achieved
@@ -222,6 +224,9 @@ This MCP server provides comprehensive tools for Dataverse schema management:
 ### Schema Export Operations
 - **export_solution_schema** ✅ **Fully Tested** - **Export Solution Schema**: Exports a comprehensive JSON schema of Dataverse tables, columns, relationships, and option sets. Use this to document your data model, generate diagrams, or analyze solution structure. Supports filtering by prefixes, system/custom components, and specific tables.
 - **generate_mermaid_diagram** ✅ **Fully Tested** - **Generate Mermaid Diagram**: Generates a Mermaid entity relationship diagram from an exported schema JSON file. Creates visual documentation of your data model with tables, columns, and relationships. Perfect for documentation, presentations, and understanding data structure.
+
+### Business Record Operations
+- **create_dataverse_record** - **Create Dataverse Record**: Creates one record in an explicit plural entity set. Provide structural column logical names in `record`; use case-sensitive navigation-property names for lookup `@odata.bind` keys, such as `new_AccountId@odata.bind: "/accounts(<guid>)"`. Choice values are integers. The caller must set `confirmCreate: true` before the tool writes business data.
 
 ### WebAPI Call Generator
 - **generate_webapi_call** ✅ **Fully Tested** - **Generate Dataverse WebAPI Call**: Generate HTTP requests, curl commands, and JavaScript examples for Dataverse WebAPI operations. Supports all CRUD operations, associations, actions, and functions with proper OData query parameters and headers.
