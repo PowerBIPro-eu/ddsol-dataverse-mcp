@@ -142,6 +142,13 @@ This MCP server provides comprehensive tools for Dataverse schema management:
 - **delete_dataverse_relationship** ✅ **Fully Tested** - **Delete Dataverse Relationship**: Permanently deletes a relationship between Dataverse tables. WARNING: This action cannot be undone and will remove the connection between tables, including any lookup fields for One-to-Many relationships. Use with extreme caution.
 - **list_dataverse_relationships** ✅ **Fully Tested** - **List Dataverse Relationships**: Retrieves a list of relationships in the Dataverse environment with filtering options. Use this to discover table connections, find custom relationships, or get an overview of the data model relationships. Supports filtering by entity, relationship type, and managed/unmanaged status.
 
+### Status Reason Operations
+- **get_dataverse_status_reasons** - Lists the system Status Reason options on a table, grouped by Active and Inactive state.
+- **add_dataverse_status_reason** - Adds a Status Reason to the Active or Inactive state of a table.
+- **update_dataverse_status_reason** - Updates a Status Reason label, description, or color.
+- **delete_dataverse_status_reason** - Deletes a custom Status Reason by numeric value.
+- **set_dataverse_status_reason_default** - Sets the default Status Reason for the Active or Inactive state.
+
 ### Alternate Key Operations
 - **create_dataverse_alternate_key** - Creates an alternate key from one or more existing table columns. Unique-index creation is asynchronous.
 - **get_dataverse_alternate_key** - Retrieves an alternate key by metadata ID or schema name, including its index status.

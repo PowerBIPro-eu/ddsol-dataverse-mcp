@@ -24,6 +24,13 @@ import {
   listRelationshipsTool
 } from "./tools/relationship-tools.js";
 import {
+  getStatusReasonsTool,
+  addStatusReasonTool,
+  updateStatusReasonTool,
+  deleteStatusReasonTool,
+  setStatusReasonDefaultTool
+} from "./tools/status-reason-tools.js";
+import {
   createAlternateKeyTool,
   getAlternateKeyTool,
   listAlternateKeysTool,
@@ -196,6 +203,13 @@ createRelationshipTool(server, dataverseClient);
 getRelationshipTool(server, dataverseClient);
 deleteRelationshipTool(server, dataverseClient);
 listRelationshipsTool(server, dataverseClient);
+
+// Register Status Reason tools
+getStatusReasonsTool(server, dataverseClient);
+addStatusReasonTool(server, dataverseClient);
+updateStatusReasonTool(server, dataverseClient);
+deleteStatusReasonTool(server, dataverseClient);
+setStatusReasonDefaultTool(server, dataverseClient);
 
 // Register alternate key tools
 createAlternateKeyTool(server, dataverseClient);
