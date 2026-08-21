@@ -5,6 +5,37 @@ import { DataverseClient } from "../dataverse-client.js";
 const appIdSchema = z.string().uuid("Use a model-driven app GUID.");
 const sitemapIdSchema = z.string().uuid("Use a sitemap GUID.");
 
+const appComponentTypes = {
+  Table: 1,
+  View: 26,
+  BusinessProcessFlow: 29,
+  Chart: 59,
+  Form: 60,
+  Sitemap: 62
+} as const;
+
+const appComponentEntityKeys = {
+  Table: { entityType: "entity", key: "entityid" },
+  View: { entityType: "savedquery", key: "savedqueryid" },
+  BusinessProcessFlow: { entityType: "workflow", key: "workflowid" },
+  Chart: { entityType: "savedqueryvisualization", key: "savedqueryvisualizationid" },
+  Form: { entityType: "systemform", key: "formid" },
+  Sitemap: { entityType: "sitemap", key: "sitemapid" }
+} as const;
+
+const appComponentSpecSchema = z.object({
+  componentType: z.enum(["Table", "View", "BusinessProcessFlow", "Chart", "Form", "Sitemap"]).describe("Dataverse app component type"),
+  objectId: z.string().uuid("Use the artifact GUID for the selected non-table component type.").optional(),
+  entityLogicalName: z.string().regex(/^[A-Za-z][A-Za-z0-9_]*$/, "Use a Dataverse table logical name.").optional().describe("Required for Table components. The MCP resolves this to the entity record ID required by AddAppComponents.")
+});
+
+type AppComponentSpec = z.infer<typeof appComponentSpecSchema>;
+type ResolvedAppComponent = {
+  componentType: AppComponentSpec["componentType"];
+  objectId: string;
+  entityLogicalName?: string;
+};
+
 function writeError(operation: string, error: unknown) {
   return {
     content: [{
@@ -28,11 +59,12 @@ export function createModelDrivenAppTool(server: McpServer, client: DataverseCli
     "create_dataverse_model_driven_app",
     {
       title: "Create Model-Driven App",
-      description: "Creates a model-driven app in the active solution. Provide the app's Dataverse-required client, form-factor, and navigation values from an approved app design. The tool re-fetches the created app for verification.",
+      description: "Creates a model-driven app in the active solution. Provide the app's Dataverse-required client, form-factor, navigation, and application-shell web resource values from an approved app design. The tool re-fetches the created app for verification.",
       inputSchema: {
         name: z.string().min(1).max(100).describe("Display name of the app"),
         uniqueName: z.string().min(1).max(100).regex(/^[A-Za-z][A-Za-z0-9_]*$/, "Use an app unique name without spaces or punctuation.").describe("Unique name of the app"),
         publisherId: z.string().uuid("Use a publisher GUID.").describe("Publisher GUID for the app"),
+        webResourceId: z.string().uuid("Use a web resource GUID.").describe("Required appmodule webresourceid. Obtain it by retrieving a compatible existing model-driven app; do not invent a GUID."),
         clientType: z.number().int().min(1).max(31).describe("Dataverse AppModule clienttype value approved for this app"),
         formFactor: z.number().int().min(1).max(8).describe("Dataverse AppModule formfactor value approved for this app"),
         navigationType: z.enum(["0", "1"]).default("0").describe("0=Single session, 1=Multi session"),
@@ -51,11 +83,12 @@ export function createModelDrivenAppTool(server: McpServer, client: DataverseCli
           clienttype: params.clientType,
           formfactor: params.formFactor,
           navigationtype: Number(params.navigationType),
+          webresourceid: params.webResourceId,
           isdefault: false,
           description: params.description,
           appgraph: params.appGraph,
           configxml: params.configXml,
-          "publisherid@odata.bind": `/publishers(${params.publisherId})`
+          "publisher_appmodule_appmodule@odata.bind": `/publishers(${params.publisherId})`
         }, {
           Prefer: "return=representation",
           "MSCRM.SolutionUniqueName": solutionUniqueName
@@ -65,7 +98,9 @@ export function createModelDrivenAppTool(server: McpServer, client: DataverseCli
         if (!appId) {
           throw new Error("Dataverse did not return an appmoduleid for the new app.");
         }
-        const verified = await client.get(`appmodules(${appId})`);
+        await addAppToSolution(client, appId, solutionUniqueName);
+        const verified = await getUnpublishedApp(client, appId);
+        await verifyAppSolutionMembership(client, appId, solutionUniqueName);
         return { content: [{ type: "text", text: `Successfully created and verified model-driven app '${params.name}'.\n\n${JSON.stringify(verified, null, 2)}` }] };
       } catch (error) {
         return writeError("creating model-driven app", error);
@@ -84,7 +119,7 @@ export function getModelDrivenAppTool(server: McpServer, client: DataverseClient
     },
     async (params) => {
       try {
-        const app = await client.get(`appmodules(${params.appId})`);
+        const app = await getUnpublishedApp(client, params.appId);
         return { content: [{ type: "text", text: JSON.stringify(app, null, 2) }] };
       } catch (error) {
         return writeError("retrieving model-driven app", error);
@@ -103,7 +138,7 @@ export function listModelDrivenAppsTool(server: McpServer, client: DataverseClie
     },
     async (params) => {
       try {
-        const response = await client.get("appmodules?$select=appmoduleid,name,uniquename,description,clienttype,formfactor,navigationtype,isdefault,statecode,statuscode,modifiedon");
+        const response = await client.get("appmodules/Microsoft.Dynamics.CRM.RetrieveUnpublishedMultiple()?$select=appmoduleid,name,uniquename,description,clienttype,formfactor,navigationtype,isdefault,statecode,statuscode,modifiedon");
         const apps = params.nameContains
           ? response.value.filter((app: { name?: string }) => app.name?.toLowerCase().includes(params.nameContains!.toLowerCase()))
           : response.value;
@@ -130,7 +165,7 @@ export function updateModelDrivenAppTool(server: McpServer, client: DataverseCli
     async (params) => {
       try {
         await client.patch(`appmodules(${params.appId})`, params.updates);
-        const verified = await client.get(`appmodules(${params.appId})`);
+        const verified = await getUnpublishedApp(client, params.appId);
         return { content: [{ type: "text", text: `Successfully updated and verified model-driven app.\n\n${JSON.stringify(verified, null, 2)}` }] };
       } catch (error) {
         return writeError("updating model-driven app", error);
@@ -163,18 +198,21 @@ export function addModelDrivenAppComponentsTool(server: McpServer, client: Datav
     "add_dataverse_model_driven_app_components",
     {
       title: "Add Model-Driven App Components",
-      description: "Adds approved AppModule components using Dataverse AddAppComponents, then returns the app's component list for verification. Each component must include its Dataverse @odata.type and key property.",
+      description: "Adds approved typed AppModule components using Dataverse AddAppComponents. The tool serializes each item as the keyed target Dataverse entity and verifies every requested object ID is persisted exactly once.",
       inputSchema: {
         appId: appIdSchema,
-        components: z.array(z.record(z.unknown())).min(1).describe("Dataverse component entities for AddAppComponents, each including '@odata.type' and its key property"),
+        components: z.array(appComponentSpecSchema).min(1).describe("Components to add. For Table, prefer entityLogicalName; objectId is accepted only when it is an actual Dataverse entities.entityid."),
         confirmAdd: z.literal(true).describe("Must be true to add components")
       }
     },
     async (params) => {
       try {
-        await client.callAction("AddAppComponents", { AppId: params.appId, Components: params.components });
+        const resolvedComponents = await resolveAppComponents(client, params.components);
+        const components = toActionEntities(resolvedComponents);
+        await client.callAction("AddAppComponents", { AppId: params.appId, Components: components });
         const verified = await retrieveAppComponents(client, params.appId);
-        return { content: [{ type: "text", text: `Successfully added components and retrieved the current app component list.\n\n${JSON.stringify(verified, null, 2)}` }] };
+        verifyComponentObjectIds(verified.value ?? [], resolvedComponents, "add");
+        return { content: [{ type: "text", text: `Successfully added components and retrieved the current app component list.\n\nResolved component identities:\n${JSON.stringify(resolvedComponents, null, 2)}\n\nPersisted components:\n${JSON.stringify(verified, null, 2)}` }] };
       } catch (error) {
         return writeError("adding model-driven app components", error);
       }
@@ -187,18 +225,21 @@ export function removeModelDrivenAppComponentsTool(server: McpServer, client: Da
     "remove_dataverse_model_driven_app_components",
     {
       title: "Remove Model-Driven App Components",
-      description: "Removes approved AppModule components using Dataverse RemoveAppComponents, then returns the app's component list for verification.",
+      description: "Removes approved typed AppModule components using Dataverse RemoveAppComponents, then verifies the requested object IDs are absent from persisted app component records.",
       inputSchema: {
         appId: appIdSchema,
-        components: z.array(z.record(z.unknown())).min(1).describe("Dataverse component entities for RemoveAppComponents, each including '@odata.type' and its key property"),
+        components: z.array(appComponentSpecSchema).min(1).describe("Components to remove. For Table, prefer entityLogicalName; objectId is accepted only when it is an actual Dataverse entities.entityid."),
         confirmRemove: z.literal(true).describe("Must be true to remove components")
       }
     },
     async (params) => {
       try {
-        await client.callAction("RemoveAppComponents", { AppId: params.appId, Components: params.components });
+        const resolvedComponents = await resolveAppComponents(client, params.components);
+        const components = toActionEntities(resolvedComponents);
+        await client.callAction("RemoveAppComponents", { AppId: params.appId, Components: components });
         const verified = await retrieveAppComponents(client, params.appId);
-        return { content: [{ type: "text", text: `Successfully removed components and retrieved the current app component list.\n\n${JSON.stringify(verified, null, 2)}` }] };
+        verifyComponentObjectIds(verified.value ?? [], resolvedComponents, "remove");
+        return { content: [{ type: "text", text: `Successfully removed components and retrieved the current app component list.\n\nResolved component identities:\n${JSON.stringify(resolvedComponents, null, 2)}\n\nPersisted components:\n${JSON.stringify(verified, null, 2)}` }] };
       } catch (error) {
         return writeError("removing model-driven app components", error);
       }
@@ -211,7 +252,7 @@ export function getModelDrivenAppComponentsTool(server: McpServer, client: Datav
     "get_dataverse_model_driven_app_components",
     {
       title: "Get Model-Driven App Components",
-      description: "Returns the components included in a model-driven app using Dataverse RetrieveAppComponents.",
+      description: "Returns persisted app component records for a model-driven app.",
       inputSchema: { appId: appIdSchema }
     },
     async (params) => {
@@ -288,5 +329,106 @@ export function validateModelDrivenAppTool(server: McpServer, client: DataverseC
 }
 
 async function retrieveAppComponents(client: DataverseClient, appId: string) {
-  return client.get(`Microsoft.Dynamics.CRM.RetrieveAppComponents(AppModuleId=${appId})`);
+  const app = await getUnpublishedApp(client, appId);
+  const appModuleIdUnique = app.appmoduleidunique;
+  if (!appModuleIdUnique) {
+    throw new Error(`Model-driven app '${appId}' did not return appmoduleidunique for component lookup.`);
+  }
+  return client.get(`appmodulecomponents?$filter=_appmoduleidunique_value eq ${appModuleIdUnique}&$select=appmodulecomponentid,componenttype,objectid,isdefault,ismetadata,rootcomponentbehavior,rootappmodulecomponentid`);
+}
+
+async function getUnpublishedApp(client: DataverseClient, appId: string) {
+  return client.get(`appmodules(${appId})/Microsoft.Dynamics.CRM.RetrieveUnpublished()`);
+}
+
+async function resolveAppComponents(client: DataverseClient, components: AppComponentSpec[]): Promise<ResolvedAppComponent[]> {
+  return Promise.all(components.map(async (component) => {
+    if (component.componentType !== "Table") {
+      if (!component.objectId) {
+        throw new Error(`${component.componentType} components require objectId.`);
+      }
+      return { componentType: component.componentType, objectId: component.objectId as string };
+    }
+
+    const entity = component.entityLogicalName
+      ? await getEntityByLogicalName(client, component.entityLogicalName)
+      : component.objectId
+        ? await getEntityById(client, component.objectId)
+        : undefined;
+    if (!entity?.entityid || entity.logicalname?.toLowerCase() === "entity") {
+      throw new Error("Table components require entityLogicalName, or an objectId that is a valid concrete EntityDefinition MetadataId. The abstract base 'entity' definition cannot be added as an app table component.");
+    }
+    return {
+      componentType: component.componentType,
+      objectId: entity.entityid,
+      entityLogicalName: entity.logicalname
+    };
+  }));
+}
+
+async function getEntityByLogicalName(client: DataverseClient, entityLogicalName: string) {
+  const escapedLogicalName = entityLogicalName.replace(/'/g, "''");
+  try {
+    const definition = await client.getMetadata(`EntityDefinitions(LogicalName='${escapedLogicalName}')?$select=MetadataId,LogicalName`);
+    return definition?.MetadataId
+      ? { entityid: definition.MetadataId, logicalname: definition.LogicalName }
+      : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+async function getEntityById(client: DataverseClient, entityId: string) {
+  try {
+    const definition = await client.getMetadata(`EntityDefinitions(${entityId})?$select=MetadataId,LogicalName`);
+    return definition?.MetadataId
+      ? { entityid: definition.MetadataId, logicalname: definition.LogicalName }
+      : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function toActionEntities(components: ResolvedAppComponent[]) {
+  return components.map((component) => {
+    const target = appComponentEntityKeys[component.componentType];
+    return {
+      "@odata.type": `Microsoft.Dynamics.CRM.${target.entityType}`,
+      [target.key]: component.objectId
+    };
+  });
+}
+
+function verifyComponentObjectIds(
+  persistedComponents: Array<{ componenttype?: number; objectid?: string }>,
+  expectedComponents: ResolvedAppComponent[],
+  operation: "add" | "remove"
+) {
+  const persistedKeys = new Set(persistedComponents.map((component) => `${component.componenttype}:${component.objectid?.toLowerCase()}`));
+  const unexpected = expectedComponents.filter((component) => {
+    const key = `${appComponentTypes[component.componentType]}:${component.objectId.toLowerCase()}`;
+    return operation === "add" ? !persistedKeys.has(key) : persistedKeys.has(key);
+  });
+
+  if (unexpected.length > 0) {
+    throw new Error(`App component ${operation} could not be verified for: ${unexpected.map((component) => `${component.componentType} ${component.entityLogicalName ?? component.objectId} (${component.objectId})`).join(", ")}. The operation may have created or retained different components; inspect the returned app component list before retrying.`);
+  }
+}
+
+async function addAppToSolution(client: DataverseClient, appId: string, solutionUniqueName: string) {
+  await client.callAction("AddSolutionComponent", {
+    ComponentId: appId,
+    ComponentType: 80,
+    SolutionUniqueName: solutionUniqueName,
+    AddRequiredComponents: false,
+    DoNotIncludeSubcomponents: true
+  });
+}
+
+async function verifyAppSolutionMembership(client: DataverseClient, appId: string, solutionUniqueName: string) {
+  const components = await client.get(`solutioncomponents?$filter=objectid eq ${appId} and componenttype eq 80&$expand=solutionid($select=uniquename)`);
+  const isMember = components.value?.some((component: { solutionid?: { uniquename?: string } }) => component.solutionid?.uniquename === solutionUniqueName);
+  if (!isMember) {
+    throw new Error(`Model-driven app '${appId}' was created but could not be verified as a component of solution '${solutionUniqueName}'.`);
+  }
 }

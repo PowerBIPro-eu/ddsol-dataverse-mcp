@@ -841,12 +841,7 @@ export class DataverseClient {
   async callAction<T = any>(actionName: string, data?: any): Promise<T> {
     const actionClient = axios.create({
       baseURL: `${this.config.dataverseUrl}/api/data/v9.2/`,
-      headers: {
-        'Content-Type': 'application/json',
-        'Accept': 'application/json',
-        'OData-MaxVersion': '4.0',
-        'OData-Version': '4.0'
-      }
+      headers: this.getMetadataHeaders()
     });
 
     // Add error interceptor
@@ -872,7 +867,8 @@ export class DataverseClient {
       'PublishXml', 'PublishAllXml', 'ImportSolution', 'ExportSolution',
       'InsertOptionValue', 'UpdateOptionValue', 'DeleteOptionValue', 'OrderOption',
       'InsertStatusValue', 'UpdateStateValue',
-      'AddSolutionComponent', 'RemoveSolutionComponent'
+      'AddSolutionComponent', 'RemoveSolutionComponent',
+      'AddAppComponents', 'RemoveAppComponents'
     ];
     const actionUrl = globalActions.includes(actionName) ? actionName : `Microsoft.Dynamics.CRM.${actionName}`;
     const response: AxiosResponse<T> = await actionClient.post(actionUrl, data);
@@ -883,12 +879,7 @@ export class DataverseClient {
   async callBoundAction<T = any>(entitySetName: string, entityId: string, actionName: string, data?: any): Promise<T> {
     const actionClient = axios.create({
       baseURL: `${this.config.dataverseUrl}/api/data/v9.2/`,
-      headers: {
-        'Content-Type': 'application/json',
-        'Accept': 'application/json',
-        'OData-MaxVersion': '4.0',
-        'OData-Version': '4.0'
-      }
+      headers: this.getMetadataHeaders()
     });
 
     actionClient.interceptors.response.use(

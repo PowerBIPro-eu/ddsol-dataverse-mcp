@@ -12,6 +12,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `create_dataverse_records`, `update_dataverse_records`, and `delete_dataverse_records` support confirmed bulk business-data mutations of up to 25 records per call. Creates return record representations, updates re-fetch records for verification, and delete responses confirm completed deletes.
 - Model-driven app management: create, retrieve, list, update, delete, validate, and manage app components and sitemaps through dedicated `appmodule` and `sitemap` tools.
 
+### Fixed
+- `create_dataverse_model_driven_app` now uses the `appmodule` entity's `publisher_appmodule_appmodule@odata.bind` navigation property when linking the required publisher.
+- `create_dataverse_model_driven_app` now exposes and sends the required `webresourceid` field instead of attempting app creation with a null application-shell web resource.
+- Model-driven app create/get/list/update verification now uses `RetrieveUnpublished` and `RetrieveUnpublishedMultiple`, preventing saved but unpublished apps from being incorrectly reported as missing.
+- Model-driven app creation now explicitly adds the AppModule to the selected solution and verifies the matching solution component; app-component reads now query persisted `appmodulecomponents` records instead of the unavailable `RetrieveAppComponents` endpoint.
+- Model-driven app component mutations now invoke the documented unbound `AddAppComponents` and `RemoveAppComponents` actions with an explicit `AppId`, without a namespace prefix, and propagate the active solution context header.
+- Model-driven app component mutations now use typed, keyed target-entity payloads (for example, `entity` plus `entityid` for tables) and verify every requested component type/object ID against the persisted app component list.
+- Table app components now resolve a supplied table logical name to the internal `entities.entityid` before calling the app component action, avoiding ambiguous EntityMetadata.MetadataId values.
+- App component input validation now accepts legacy table `objectId` input without an MCP runtime failure, resolves it only when it is a valid `entities.entityid`, and otherwise returns an explicit metadata-ID guidance error.
+- Table app components now resolve exact `EntityDefinitions` metadata records rather than querying the generic `entities` data table, preventing accidental mapping to the abstract base `entity` definition.
+
 ## [0.2.8]
 
 ### Enhanced
