@@ -141,7 +141,10 @@ import {
   publishDataverseCustomizationsTool
 } from "./tools/publish-tools.js";
 import {
-  createDataverseRecordTool
+  createDataverseRecordTool,
+  createDataverseRecordsTool,
+  updateDataverseRecordsTool,
+  deleteDataverseRecordsTool
 } from "./tools/record-tools.js";
 import {
   registerWebAPIResources
@@ -356,6 +359,9 @@ publishDataverseCustomizationsTool(server, dataverseClient);
 
 // Register record tools
 createDataverseRecordTool(server, dataverseClient);
+createDataverseRecordsTool(server, dataverseClient);
+updateDataverseRecordsTool(server, dataverseClient);
+deleteDataverseRecordsTool(server, dataverseClient);
 
 // Start the server
 const transport = new StdioServerTransport();

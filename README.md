@@ -227,6 +227,11 @@ This MCP server provides comprehensive tools for Dataverse schema management:
 
 ### Business Record Operations
 - **create_dataverse_record** - **Create Dataverse Record**: Creates one record in an explicit plural entity set. Provide structural column logical names in `record`; use case-sensitive navigation-property names for lookup `@odata.bind` keys, such as `new_AccountId@odata.bind: "/accounts(<guid>)"`. Choice values are integers. The caller must set `confirmCreate: true` before the tool writes business data.
+- **create_dataverse_records** - **Create Dataverse Records**: Creates up to 25 records in one explicit entity set. Each returned Dataverse representation verifies its record was created. Requires `confirmWrite: true`.
+- **update_dataverse_records** - **Update Dataverse Records**: Updates up to 25 identified records in one explicit entity set and re-fetches every record to verify the write. Requires `confirmWrite: true`.
+- **delete_dataverse_records** - **Delete Dataverse Records**: Deletes up to 25 identified records in one explicit entity set. A successful Dataverse delete response confirms each deletion. Requires `confirmDelete: true`; deletion cannot be undone.
+
+Bulk tools process records sequentially. If a batch fails partway through, the error response includes the records confirmed as completed before the failure so callers can reconcile the partial result.
 
 ### WebAPI Call Generator
 - **generate_webapi_call** ✅ **Fully Tested** - **Generate Dataverse WebAPI Call**: Generate HTTP requests, curl commands, and JavaScript examples for Dataverse WebAPI operations. Supports all CRUD operations, associations, actions, and functions with proper OData query parameters and headers.

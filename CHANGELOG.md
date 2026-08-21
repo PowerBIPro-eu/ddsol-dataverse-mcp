@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - `create_dataverse_record` creates one business-data record in an explicit Dataverse entity set. It supports structured record payloads, `@odata.bind` lookup bindings, and requires `confirmCreate: true` before writing data.
+- `create_dataverse_records`, `update_dataverse_records`, and `delete_dataverse_records` support confirmed bulk business-data mutations of up to 25 records per call. Creates return record representations, updates re-fetch records for verification, and delete responses confirm completed deletes.
 
 ## [0.2.8]
 
