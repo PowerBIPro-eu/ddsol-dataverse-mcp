@@ -315,7 +315,7 @@ The MCP server supports all major Dataverse column types with comprehensive conf
 | **Decimal** | ✅ Implemented | ✅ **Fully Verified** | Decimal numbers with precision | `precision`, `minValue`, `maxValue`, `defaultValue` |
 | **Money** | ✅ Implemented | ✅ **Fully Verified** | Currency values | `precision`, `minValue`, `maxValue` |
 | **Boolean** | ✅ Implemented | ✅ **Fully Verified** | True/false with custom labels | `trueOptionLabel`, `falseOptionLabel`, `defaultValue` |
-| **DateTime** | ✅ Implemented | ✅ **Fully Verified** | Date and time fields | `dateTimeFormat` (DateOnly, DateAndTime) |
+| **DateTime** | ✅ Implemented | ✅ **Fully Verified** | Date and time fields | `dateTimeFormat` (DateOnly, DateAndTime), `dateTimeBehavior` (UserLocal, TimeZoneIndependent, DateOnly) |
 | **Picklist** | ✅ Implemented | ✅ **Fully Verified** | Choice fields (local & global) | `options` (for local), `optionSetName` (for global) |
 | **Lookup** | ✅ Implemented | ✅ **Fully Verified** | References to other tables | `targetEntity` |
 | **Memo** | ✅ Implemented | ✅ **Fully Verified** | Long text fields, including rich text | `maxLength`, `memoFormat` (PlainText, RichText) |
@@ -343,7 +343,7 @@ The MCP server supports all major Dataverse column types with comprehensive conf
 #### DateTime Columns ✅ Fully Tested
 - **DateOnly**: Date without time component (e.g., hire date, birthday)
 - **DateAndTime**: Full timestamp with timezone handling (e.g., last login, created date)
-- **Behavior**: Uses UserLocal timezone behavior
+- **Behavior**: Defaults to `UserLocal`; use `TimeZoneIndependent` when an entered time must not be adjusted for each user's time zone.
 
 #### Picklist Columns ✅ Fully Tested
 - **Local Option Sets**: Create inline options with the column
@@ -771,6 +771,17 @@ await use_mcp_tool("dataverse", "create_dataverse_column", {
   dateTimeFormat: "DateAndTime"
 });
 
+// DateTime column whose entered time is not adjusted for the viewing user's time zone
+await use_mcp_tool("dataverse", "create_dataverse_column", {
+  entityLogicalName: "xyz_project",
+  displayName: "Venue Opens On",
+  schemaName: "xyz_venueopenson",
+  logicalName: "xyz_venueopenson",
+  columnType: "DateTime",
+  dateTimeBehavior: "TimeZoneIndependent",
+  dateTimeFormat: "DateAndTime"
+});
+
 // Picklist column with local options
 await use_mcp_tool("dataverse", "create_dataverse_column", {
   entityLogicalName: "xyz_project",
@@ -783,7 +794,8 @@ await use_mcp_tool("dataverse", "create_dataverse_column", {
     { value: 2, label: "In Progress" },
     { value: 3, label: "On Hold" },
     { value: 4, label: "Completed" }
-  ]
+  ],
+  defaultOptionValue: 1
 });
 
 // Picklist column using global option set
@@ -826,6 +838,13 @@ await use_mcp_tool("dataverse", "create_dataverse_column", {
   columnType: "Memo",
   memoFormat: "RichText",
   maxLength: 10000
+});
+
+// Convert an existing Memo column to rich text.
+await use_mcp_tool("dataverse", "update_dataverse_column", {
+  entityLogicalName: "xyz_project",
+  logicalName: "xyz_description",
+  memoFormat: "RichText"
 });
 ```
 

@@ -44,6 +44,8 @@ export function createTableTool(server: McpServer, client: DataverseClient) {
         isConnectionsEnabled: z.boolean().default(false).describe("Whether connections are enabled"),
         isMailMergeEnabled: z.boolean().default(false).describe("Whether mail merge is enabled"),
         isDocumentManagementEnabled: z.boolean().default(false).describe("Whether document management is enabled"),
+        isQuickCreateEnabled: z.boolean().default(false).describe("Whether the table is enabled for quick create forms when Dataverse supports quick create for the table"),
+        changeTrackingEnabled: z.boolean().default(false).describe("Whether Dataverse change tracking is enabled for the table"),
         primaryNameDisplayName: z.string().describe("Display name of the primary name attribute"),
         primaryNameLogicalName: z.string().describe("Complete logical name of the primary name attribute"),
         primaryNameSchemaName: z.string().describe("Complete schema name of the primary name attribute. Must exactly match primaryNameLogicalName."),
@@ -68,6 +70,8 @@ export function createTableTool(server: McpServer, client: DataverseClient) {
           OwnershipType: ownershipTypeValue,
           HasActivities: params.hasActivities,
           HasNotes: params.hasNotes,
+          IsQuickCreateEnabled: params.isQuickCreateEnabled,
+          ChangeTrackingEnabled: params.changeTrackingEnabled,
           IsActivity: false,
           IsCustomEntity: true,
           Attributes: [
@@ -173,7 +177,9 @@ export function updateTableTool(server: McpServer, client: DataverseClient) {
         isValidForQueue: z.boolean().optional().describe("Whether records can be added to queues"),
         isConnectionsEnabled: z.boolean().optional().describe("Whether connections are enabled"),
         isMailMergeEnabled: z.boolean().optional().describe("Whether mail merge is enabled"),
-        isDocumentManagementEnabled: z.boolean().optional().describe("Whether document management is enabled")
+        isDocumentManagementEnabled: z.boolean().optional().describe("Whether document management is enabled"),
+        isQuickCreateEnabled: z.boolean().optional().describe("Whether the table is enabled for quick create forms when Dataverse supports quick create for the table"),
+        changeTrackingEnabled: z.boolean().optional().describe("Whether Dataverse change tracking is enabled for the table")
       }
     },
     async (params) => {
@@ -242,6 +248,12 @@ export function updateTableTool(server: McpServer, client: DataverseClient) {
         }
         if (params.isDocumentManagementEnabled !== undefined) {
           updatedEntity.IsDocumentManagementEnabled = params.isDocumentManagementEnabled;
+        }
+        if (params.isQuickCreateEnabled !== undefined) {
+          updatedEntity.IsQuickCreateEnabled = params.isQuickCreateEnabled;
+        }
+        if (params.changeTrackingEnabled !== undefined) {
+          updatedEntity.ChangeTrackingEnabled = params.changeTrackingEnabled;
         }
 
         // Use PUT method with MSCRM.MergeLabels header as per Microsoft documentation

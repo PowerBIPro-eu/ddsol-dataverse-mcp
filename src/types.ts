@@ -25,6 +25,7 @@ export interface EntityMetadata {
   IsReadOnlyInMobileClient: boolean;
   IsVisibleInMobile: boolean;
   IsVisibleInMobileClient: boolean;
+  IsQuickCreateEnabled: boolean;
   IsAuditEnabled: boolean;
   IsReplicateable: boolean;
   IsDuplicateDetectionEnabled: boolean;

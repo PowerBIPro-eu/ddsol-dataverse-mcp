@@ -68,7 +68,8 @@ export function createColumnTool(server: McpServer, client: DataverseClient) {
           value: z.number(),
           label: z.string(),
           description: z.string().optional()
-        })).optional().describe("Options for picklist columns")
+        })).optional().describe("Options for picklist columns"),
+        defaultOptionValue: z.number().optional().describe("Default option value for Picklist columns. The value must exist in the selected local or global option set.")
       }
     },
     async (params) => {
@@ -185,6 +186,9 @@ export function createColumnTool(server: McpServer, client: DataverseClient) {
 
           case "Picklist":
             attributeDefinition["@odata.type"] = "Microsoft.Dynamics.CRM.PicklistAttributeMetadata";
+            if (params.defaultOptionValue !== undefined) {
+              attributeDefinition.DefaultFormValue = params.defaultOptionValue;
+            }
             if (params.optionSetName) {
               // Reference an existing global option set using the MetadataId
               // First get the option set to retrieve its MetadataId
@@ -197,6 +201,9 @@ export function createColumnTool(server: McpServer, client: DataverseClient) {
                 throw new Error(`Global option set '${params.optionSetName}' not found: ${error instanceof Error ? error.message : 'Unknown error'}`);
               }
             } else if (params.options && params.options.length > 0) {
+              if (params.defaultOptionValue !== undefined && !params.options.some(option => option.value === params.defaultOptionValue)) {
+                throw new Error(`defaultOptionValue '${params.defaultOptionValue}' must match a value in the local options array.`);
+              }
               // Create a new local option set
               attributeDefinition.OptionSet = {
                 "@odata.type": "Microsoft.Dynamics.CRM.OptionSetMetadata",
@@ -340,7 +347,8 @@ export function updateColumnTool(server: McpServer, client: DataverseClient) {
         isValidForUpdate: z.boolean().optional().describe("Whether the column can be updated"),
         memoFormat: z.enum(["PlainText", "RichText"]).optional().describe("New format for a Memo column. RichText stores formatted HTML; PlainText creates a standard multiline text field."),
         dateTimeBehavior: z.enum(["UserLocal", "TimeZoneIndependent", "DateOnly"]).optional().describe("New storage behavior for a DateTime column. Dataverse permits behavior changes only when the column is customizable and its current behavior supports the requested transition."),
-        dateTimeFormat: z.enum(["DateOnly", "DateAndTime"]).optional().describe("New display format for a DateTime column")
+        dateTimeFormat: z.enum(["DateOnly", "DateAndTime"]).optional().describe("New display format for a DateTime column"),
+        defaultOptionValue: z.number().optional().describe("New default option value for a Picklist column. The value must exist in the column's option set.")
       }
     },
     async (params) => {
@@ -360,6 +368,7 @@ export function updateColumnTool(server: McpServer, client: DataverseClient) {
         const odataType = currentAttribute["@odata.type"] || "";
         const isDateTime = attributeType === 2 || attributeTypeName === "DateTimeType" || odataType.includes("DateTimeAttributeMetadata");
         const isMemo = attributeType === 7 || attributeTypeName === "MemoType" || odataType.includes("MemoAttributeMetadata");
+        const isPicklist = attributeType === 11 || attributeTypeName === "PicklistType" || odataType.includes("PicklistAttributeMetadata");
 
         // Update only the specified properties
         if (params.displayName) {
@@ -429,6 +438,12 @@ export function updateColumnTool(server: McpServer, client: DataverseClient) {
             updatedAttribute.Format = params.dateTimeFormat === "DateOnly" ? 0 : 1;
             updatedAttribute.FormatName = { Value: params.dateTimeFormat };
           }
+        }
+        if (params.defaultOptionValue !== undefined) {
+          if (!isPicklist) {
+            throw new Error("defaultOptionValue can only be updated on a Picklist column.");
+          }
+          updatedAttribute.DefaultFormValue = params.defaultOptionValue;
         }
 
         // Use PUT method with MSCRM.MergeLabels header as per Microsoft documentation
