@@ -124,6 +124,9 @@ import {
   listViewsTool
 } from "./tools/view-tools.js";
 import {
+  setViewPowerAppsGridControlTool
+} from "./tools/view-grid-control-tools.js";
+import {
   createFormTool,
   getFormTool,
   updateFormTool,
@@ -339,6 +342,7 @@ getViewTool(server, dataverseClient);
 updateViewTool(server, dataverseClient);
 deleteViewTool(server, dataverseClient);
 listViewsTool(server, dataverseClient);
+setViewPowerAppsGridControlTool(server, dataverseClient);
 
 // Register form tools
 createFormTool(server, dataverseClient);

@@ -45,6 +45,7 @@ A Model Context Protocol (MCP) server for Microsoft Dataverse that enables schem
   - [Team Operations](#team-operations)
   - [Business Unit Operations](#business-unit-operations)
   - [Schema Export Operations](#schema-export-operations)
+  - [View Grid Control Operations](#view-grid-control-operations)
   - [WebAPI Call Generator](#webapi-call-generator)
   - [PowerPages WebAPI Generator](#powerpages-webapi-generator)
   - [PowerPages Configuration Management](#powerpages-configuration-management)
@@ -232,6 +233,9 @@ This MCP server provides comprehensive tools for Dataverse schema management:
 - **delete_dataverse_records** - **Delete Dataverse Records**: Deletes up to 25 identified records in one explicit entity set. A successful Dataverse delete response confirms each deletion. Requires `confirmDelete: true`; deletion cannot be undone.
 
 Bulk tools process records sequentially. If a batch fails partway through, the error response includes the records confirmed as completed before the failure so callers can reconcile the partial result.
+
+### View Grid Control Operations
+- **set_dataverse_view_powerapps_grid_control** - **Set Dataverse View Power Apps Grid Control**: Adds, replaces, or reconfigures the Power Apps grid control (`Microsoft.PowerApps.PowerAppsOneGrid`) on a specific system view by editing its LayoutXML — the same per-view assignment shown in the maker portal's view designer "Components" panel, distinct from the table-wide grid control setting. Exposes the full documented parameter set (editing, filtering/sorting/grouping/aggregation, selection, jump bar, pagination, choice colors, status/type icons, navigation types, reflow behavior, list-view options, lookup filter behavior, customizer control, and which of web/mobile/tablet form factors show the control). Requires `confirmUpdate: true`; publishing remains separate via `publish_dataverse_customizations`.
 
 ### WebAPI Call Generator
 - **generate_webapi_call** ✅ **Fully Tested** - **Generate Dataverse WebAPI Call**: Generate HTTP requests, curl commands, and JavaScript examples for Dataverse WebAPI operations. Supports all CRUD operations, associations, actions, and functions with proper OData query parameters and headers.
