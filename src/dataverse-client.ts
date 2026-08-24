@@ -867,8 +867,7 @@ export class DataverseClient {
       'PublishXml', 'PublishAllXml', 'ImportSolution', 'ExportSolution',
       'InsertOptionValue', 'UpdateOptionValue', 'DeleteOptionValue', 'OrderOption',
       'InsertStatusValue', 'UpdateStateValue',
-      'AddSolutionComponent', 'RemoveSolutionComponent',
-      'AddAppComponents', 'RemoveAppComponents'
+      'AddSolutionComponent', 'RemoveSolutionComponent'
     ];
     const actionUrl = globalActions.includes(actionName) ? actionName : `Microsoft.Dynamics.CRM.${actionName}`;
     const response: AxiosResponse<T> = await actionClient.post(actionUrl, data);
