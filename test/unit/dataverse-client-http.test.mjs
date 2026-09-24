@@ -101,6 +101,15 @@ test('metadata calls go through the same path and error format', async () => {
   });
 });
 
+test('a pasted Web API URL selects the same environment and token cache entry', async () => {
+  const active = await client.setActiveEnvironment(`${baseUrl}/api/data/v9.2/`);
+  assert.equal(active, baseUrl);
+  await client.get('ok');
+  const get = requests.findLast((request) => request.method === 'GET');
+  assert.equal(get.url, '/api/data/v9.2/ok');
+  assert.equal(get.headers.authorization, 'Bearer test-access-token');
+});
+
 test('an error without a Dataverse body carries no request data', async () => {
   await assert.rejects(client.get('unauthorized'), (error) => {
     assert.equal(error.message, 'Dataverse request failed with HTTP 401 Unauthorized.\nx-ms-service-request-id: req-401');

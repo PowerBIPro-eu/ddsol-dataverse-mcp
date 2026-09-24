@@ -4,6 +4,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { getJson } from './auth/entra-http.js';
 import { toDataverseError, withErrorDetailPreference } from './dataverse-error.js';
+import { normalizeEnvironmentUrl } from './environment-url.js';
 import { AuthStatus, GLOBAL_DISCOVERY_RESOURCE, TokenManager } from './auth/token-manager.js';
 
 export interface DataverseConfig {
@@ -75,9 +76,7 @@ export class DataverseClient {
     this.activeEnvironmentFilePath = path.join(process.cwd(), '.dataverse-mcp-environment.json');
 
     const persistedEnvironmentUrl = this.loadActiveEnvironment();
-    if (persistedEnvironmentUrl) {
-      this.config.dataverseUrl = persistedEnvironmentUrl;
-    }
+    this.config.dataverseUrl = this.normalizeConfiguredUrl(persistedEnvironmentUrl || config.dataverseUrl);
 
     this.tokens = new TokenManager({
       tenantId: config.tenantId,
@@ -125,7 +124,26 @@ export class DataverseClient {
 
   // Returns an access token for the active environment, signing in if needed.
   private async ensureAuthenticated(): Promise<string> {
+    if (!this.config.dataverseUrl) {
+      throw new Error(
+        'No Dataverse environment is selected. Call list_dataverse_environments to see the environments you can use, then set_dataverse_environment.'
+      );
+    }
     return this.tokens.getAccessToken(this.config.dataverseUrl);
+  }
+
+  // An unusable URL in the configuration must not stop the server: it starts without
+  // an environment and says why.
+  private normalizeConfiguredUrl(url: string | undefined): string {
+    if (!url) {
+      return '';
+    }
+    try {
+      return normalizeEnvironmentUrl(url);
+    } catch (error) {
+      console.error(`Ignoring the configured Dataverse environment: ${error instanceof Error ? error.message : String(error)}`);
+      return '';
+    }
   }
 
   // Lists all Dataverse environments the signed-in user can access, via the Global Discovery Service
@@ -155,7 +173,7 @@ export class DataverseClient {
       }
       targetUrl = match.apiUrl;
     }
-    const normalizedUrl = targetUrl.replace(/\/+$/, '');
+    const normalizedUrl = normalizeEnvironmentUrl(targetUrl);
     this.config.dataverseUrl = normalizedUrl;
     this.httpClient.defaults.baseURL = `${normalizedUrl}/api/data/v9.2/`;
     this.saveActiveEnvironment(normalizedUrl);
