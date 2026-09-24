@@ -2,6 +2,7 @@ import axios, { AxiosInstance, AxiosResponse } from 'axios';
 import { exec } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
+import { AuthHttpError, getJson, postForm } from './auth/entra-http.js';
 
 export interface DataverseConfig {
   dataverseUrl: string;
@@ -188,36 +189,25 @@ export class DataverseClient {
   private async authenticateWithClientSecret(): Promise<AuthToken> {
     const tokenUrl = `https://login.microsoftonline.com/${this.config.tenantId}/oauth2/v2.0/token`;
 
-    const params = new URLSearchParams();
-    params.append('grant_type', 'client_credentials');
-    params.append('client_id', this.config.clientId);
-    params.append('client_secret', this.config.clientSecret as string);
-    params.append('scope', `${this.config.dataverseUrl}/.default`);
-
-    const response = await axios.post(tokenUrl, params, {
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded'
-      }
-    });
+    const data = await postForm(tokenUrl, {
+      grant_type: 'client_credentials',
+      client_id: this.config.clientId,
+      client_secret: this.config.clientSecret as string,
+      scope: `${this.config.dataverseUrl}/.default`
+    }, `Microsoft Entra token endpoint (${tokenUrl})`);
 
     return {
-      ...response.data,
-      expires_at: Date.now() + (response.data.expires_in * 1000) - 60000
+      ...data,
+      expires_at: Date.now() + (data.expires_in * 1000) - 60000
     };
   }
 
   private async requestDeviceCode(scope: string): Promise<any> {
     const deviceCodeUrl = `https://login.microsoftonline.com/${this.config.tenantId}/oauth2/v2.0/devicecode`;
-    const deviceParams = new URLSearchParams({
+    const deviceCode = await postForm(deviceCodeUrl, {
       client_id: this.config.clientId,
       scope
-    });
-    const deviceResponse = await axios.post(deviceCodeUrl, deviceParams, {
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded'
-      }
-    });
-    const deviceCode = deviceResponse.data;
+    }, `Microsoft Entra device-code endpoint (${deviceCodeUrl})`);
     console.error('\nDataverse authentication required. Open this URL in a browser:');
     console.error(deviceCode.verification_uri);
     console.error(`Enter code: ${deviceCode.user_code}`);
@@ -234,27 +224,23 @@ export class DataverseClient {
 
   private async pollDeviceCodeToken(deviceCode: any): Promise<AuthToken> {
     const tokenUrl = `https://login.microsoftonline.com/${this.config.tenantId}/oauth2/v2.0/token`;
-    const pollParams = new URLSearchParams({
+    const pollParams = {
       grant_type: 'urn:ietf:params:oauth:grant-type:device_code',
       client_id: this.config.clientId,
       device_code: deviceCode.device_code
-    });
+    };
     const interval = Math.max(Number(deviceCode.interval || 5), 5) * 1000;
     const expiresAt = Date.now() + Number(deviceCode.expires_in || 900) * 1000;
     while (Date.now() < expiresAt) {
       await new Promise((resolve) => setTimeout(resolve, interval));
       try {
-        const tokenResponse = await axios.post(tokenUrl, pollParams, {
-          headers: {
-            'Content-Type': 'application/x-www-form-urlencoded'
-          }
-        });
+        const data = await postForm(tokenUrl, pollParams, `Microsoft Entra token endpoint (${tokenUrl})`);
         return {
-          ...tokenResponse.data,
-          expires_at: Date.now() + (tokenResponse.data.expires_in * 1000) - 60000
+          ...data,
+          expires_at: Date.now() + (data.expires_in * 1000) - 60000
         };
       } catch (error: any) {
-        const errorCode = error.response?.data?.error;
+        const errorCode = error instanceof AuthHttpError ? error.entra?.error : undefined;
         if (errorCode === 'authorization_declined' || errorCode === 'access_denied') {
           throw new Error('Device authentication was denied.');
         }
@@ -318,23 +304,18 @@ export class DataverseClient {
 
   private async pollDeviceCodeTokenOnce(pending: PendingDeviceCode): Promise<AuthToken> {
     const tokenUrl = `https://login.microsoftonline.com/${this.config.tenantId}/oauth2/v2.0/token`;
-    const pollParams = new URLSearchParams({
-      grant_type: 'urn:ietf:params:oauth:grant-type:device_code',
-      client_id: this.config.clientId,
-      device_code: pending.device_code
-    });
     try {
-      const tokenResponse = await axios.post(tokenUrl, pollParams, {
-        headers: {
-          'Content-Type': 'application/x-www-form-urlencoded'
-        }
-      });
+      const data = await postForm(tokenUrl, {
+        grant_type: 'urn:ietf:params:oauth:grant-type:device_code',
+        client_id: this.config.clientId,
+        device_code: pending.device_code
+      }, `Microsoft Entra token endpoint (${tokenUrl})`);
       return {
-        ...tokenResponse.data,
-        expires_at: Date.now() + (tokenResponse.data.expires_in * 1000) - 60000
+        ...data,
+        expires_at: Date.now() + (data.expires_in * 1000) - 60000
       };
     } catch (error: any) {
-      const errorCode = error.response?.data?.error;
+      const errorCode = error instanceof AuthHttpError ? error.entra?.error : undefined;
       if (errorCode === 'authorization_declined' || errorCode === 'access_denied') {
         throw new Error('Device authentication was denied.');
       }
@@ -397,21 +378,16 @@ export class DataverseClient {
       return null;
     }
     const tokenUrl = `https://login.microsoftonline.com/${this.config.tenantId}/oauth2/v2.0/token`;
-    const params = new URLSearchParams({
+    const data = await postForm(tokenUrl, {
       grant_type: 'refresh_token',
       client_id: this.config.clientId,
       refresh_token: this.authToken.refresh_token,
       scope: this.getDataverseScope()
-    });
-    const response = await axios.post(tokenUrl, params, {
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded'
-      }
-    });
+    }, `Microsoft Entra token endpoint (${tokenUrl})`);
     return {
       ...this.authToken,
-      ...response.data,
-      expires_at: Date.now() + (response.data.expires_in * 1000) - 60000
+      ...data,
+      expires_at: Date.now() + (data.expires_in * 1000) - 60000
     };
   }
 
@@ -453,31 +429,25 @@ export class DataverseClient {
       return null;
     }
     const tokenUrl = `https://login.microsoftonline.com/${this.config.tenantId}/oauth2/v2.0/token`;
-    const params = new URLSearchParams({
+    const data = await postForm(tokenUrl, {
       grant_type: 'refresh_token',
       client_id: this.config.clientId,
       refresh_token: this.globalDiscoveryToken.refresh_token,
       scope: 'https://globaldisco.crm.dynamics.com/user_impersonation offline_access'
-    });
-    const response = await axios.post(tokenUrl, params, {
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded'
-      }
-    });
+    }, `Microsoft Entra token endpoint (${tokenUrl})`);
     return {
       ...this.globalDiscoveryToken,
-      ...response.data,
-      expires_at: Date.now() + (response.data.expires_in * 1000) - 60000
+      ...data,
+      expires_at: Date.now() + (data.expires_in * 1000) - 60000
     };
   }
 
   // Lists all Dataverse environments the signed-in user can access, via the Global Discovery Service
   async listEnvironments(): Promise<DataverseEnvironment[]> {
     await this.ensureGlobalDiscoveryAuthenticated();
-    const response = await axios.get('https://globaldisco.crm.dynamics.com/api/discovery/v2.0/Instances', {
-      headers: { Authorization: `Bearer ${this.globalDiscoveryToken!.access_token}` }
-    });
-    return (response.data.value || []).map((instance: any) => ({
+    const instancesUrl = 'https://globaldisco.crm.dynamics.com/api/discovery/v2.0/Instances';
+    const data = await getJson(instancesUrl, this.globalDiscoveryToken!.access_token, `Global Discovery Service (${instancesUrl})`);
+    return (data.value || []).map((instance: any) => ({
       friendlyName: instance.FriendlyName,
       uniqueName: instance.UniqueName,
       apiUrl: instance.ApiUrl,
