@@ -3,7 +3,7 @@ import { exec } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
 import { getJson } from './auth/entra-http.js';
-import { GLOBAL_DISCOVERY_RESOURCE, TokenManager } from './auth/token-manager.js';
+import { AuthStatus, GLOBAL_DISCOVERY_RESOURCE, TokenManager } from './auth/token-manager.js';
 
 export interface DataverseConfig {
   dataverseUrl: string;
@@ -170,6 +170,11 @@ export class DataverseClient {
     this.httpClient.defaults.baseURL = `${normalizedUrl}/api/data/v9.2/`;
     this.saveActiveEnvironment(normalizedUrl);
     return normalizedUrl;
+  }
+
+  /** Sign-in state for get_dataverse_auth_status. Contains no tokens or device codes. */
+  getAuthStatus(): { activeEnvironment: string | null } & AuthStatus {
+    return { activeEnvironment: this.config.dataverseUrl || null, ...this.tokens.getStatus() };
   }
 
   getActiveEnvironment(): string {

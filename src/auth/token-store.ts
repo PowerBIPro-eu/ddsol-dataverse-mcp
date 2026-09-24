@@ -126,6 +126,19 @@ export class TokenStore {
     return data && typeof data.device_code === 'string' ? data : null;
   }
 
+  /** Lists the sign-ins in progress for one tenant and client. */
+  listPending(tenantId: string, clientId: string): PendingDeviceCode[] {
+    let names: string[];
+    try {
+      names = fs.readdirSync(this.dir).filter((name) => name.startsWith('dataverse-mcp-pending-') && name.endsWith('.json'));
+    } catch {
+      return [];
+    }
+    return names
+      .map((name) => this.readPending(path.join(this.dir, name)))
+      .filter((pending): pending is PendingDeviceCode => !!pending && pending.tenantId === tenantId && pending.clientId === clientId);
+  }
+
   writePending(filePath: string, pending: PendingDeviceCode): void {
     writeJsonAtomic(filePath, pending);
   }

@@ -63,6 +63,33 @@ export function setDataverseEnvironmentTool(server: McpServer, client: Dataverse
   );
 }
 
+export function getDataverseAuthStatusTool(server: McpServer, client: DataverseClient) {
+  server.registerTool(
+    "get_dataverse_auth_status",
+    {
+      title: "Get Dataverse Sign-in Status",
+      description: "Shows the sign-in state without starting a sign-in: cached sign-ins and when they expire, sign-ins in progress (code, expiry and the result of the last check with Microsoft Entra) and the most recent authentication errors. Use it to find out why a sign-in seems stuck instead of asking the user to sign in again. Never shows tokens.",
+      inputSchema: {}
+    },
+    async () => {
+      try {
+        return {
+          content: [
+            { type: "text", text: `Dataverse sign-in status:\n\n${JSON.stringify(client.getAuthStatus(), null, 2)}` }
+          ]
+        };
+      } catch (error) {
+        return {
+          content: [
+            { type: "text", text: `Error reading the sign-in status: ${error instanceof Error ? error.message : 'Unknown error'}` }
+          ],
+          isError: true
+        };
+      }
+    }
+  );
+}
+
 export function getActiveDataverseEnvironmentTool(server: McpServer, client: DataverseClient) {
   server.registerTool(
     "get_active_dataverse_environment",

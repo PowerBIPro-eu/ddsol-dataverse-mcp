@@ -14,8 +14,8 @@ export function makeTempDir(prefix = 'dvmcp-test-') {
   return mkdtempSync(join(tmpdir(), prefix));
 }
 
-export function startServer({ cwd, env = {} }) {
-  const home = makeTempDir('dvmcp-home-');
+/** `home` may be prepared by the test (e.g. with cached tokens); it is deleted on close. */
+export function startServer({ cwd, env = {}, home = makeTempDir('dvmcp-home-') }) {
   const child = spawn(process.execPath, [serverPath], {
     cwd,
     env: {

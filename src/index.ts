@@ -161,7 +161,8 @@ import {
 import {
   listDataverseEnvironmentsTool,
   setDataverseEnvironmentTool,
-  getActiveDataverseEnvironmentTool
+  getActiveDataverseEnvironmentTool,
+  getDataverseAuthStatusTool
 } from "./tools/environment-tools.js";
 
 // Environment variables for Dataverse authentication
@@ -341,6 +342,7 @@ registerPowerPagesResources(server, dataverseClient);
 listDataverseEnvironmentsTool(server, dataverseClient);
 setDataverseEnvironmentTool(server, dataverseClient);
 getActiveDataverseEnvironmentTool(server, dataverseClient);
+getDataverseAuthStatusTool(server, dataverseClient);
 
 // Register view tools
 createViewTool(server, dataverseClient);

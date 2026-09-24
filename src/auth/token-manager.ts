@@ -52,6 +52,31 @@ export interface TokenManagerOptions {
   pollWindowMs?: number;
 }
 
+export interface AuthStatus {
+  tenantId: string;
+  clientId: string;
+  authMode: 'client_secret' | 'device';
+  tokenCacheDir: string;
+  tokens: {
+    resource: string;
+    accessTokenValid: boolean;
+    accessTokenExpiresAt: string;
+    hasRefreshToken: boolean;
+    account?: TokenAccount;
+  }[];
+  pendingSignIns: {
+    resource: string;
+    verificationUri: string;
+    userCode: string;
+    codeValid: boolean;
+    codeExpiresAt: string;
+    pollIntervalSeconds: number;
+    lastPollAt: string | null;
+    lastResult: string | null;
+  }[];
+  recentErrors: { resource: string; at: string; message: string }[];
+}
+
 export type PollOutcome = 'pending' | 'slow_down' | 'restart' | 'declined' | 'transient' | 'fatal';
 
 /**
@@ -164,6 +189,7 @@ export class TokenManager {
   private readonly pollWindowMs: number;
   private readonly memory = new Map<string, CachedToken>();
   private readonly inflight = new Map<string, Promise<CachedToken>>();
+  private readonly lastErrors = new Map<string, { at: number; message: string }>();
 
   constructor(private readonly options: TokenManagerOptions) {
     this.store = new TokenStore(options.cacheDir ?? defaultTokenCacheDir());
@@ -186,9 +212,53 @@ export class TokenManager {
     if (running) {
       return running;
     }
-    const acquisition = this.acquire(resource).finally(() => this.inflight.delete(resource));
+    const acquisition = this.acquire(resource)
+      .then((token) => {
+        this.lastErrors.delete(resource);
+        return token;
+      }, (error) => {
+        if (error instanceof SignInFailedError || error instanceof AuthUnavailableError) {
+          this.lastErrors.set(resource, { at: this.now(), message: error.message });
+        }
+        throw error;
+      })
+      .finally(() => this.inflight.delete(resource));
     this.inflight.set(resource, acquisition);
     return acquisition;
+  }
+
+  /** Describes cached sign-ins, sign-ins in progress and recent errors. Contains no tokens or device codes. */
+  getStatus(): AuthStatus {
+    const now = this.now();
+    const iso = (epochMs: number) => new Date(epochMs).toISOString();
+    return {
+      tenantId: this.options.tenantId,
+      clientId: this.options.clientId,
+      authMode: this.options.authMode,
+      tokenCacheDir: this.store.dir,
+      tokens: this.store.listTokens(this.options.tenantId, this.options.clientId).map(({ resource, token }) => ({
+        resource,
+        accessTokenValid: now < token.expires_at,
+        accessTokenExpiresAt: iso(token.expires_at),
+        hasRefreshToken: !!token.refresh_token,
+        ...(token.account ? { account: token.account } : {})
+      })),
+      pendingSignIns: this.store.listPending(this.options.tenantId, this.options.clientId).map((pending) => ({
+        resource: pending.resource,
+        verificationUri: pending.verification_uri,
+        userCode: pending.user_code,
+        codeValid: now < pending.expires_at,
+        codeExpiresAt: iso(pending.expires_at),
+        pollIntervalSeconds: pending.interval / 1000,
+        lastPollAt: pending.lastPollAt ? iso(pending.lastPollAt) : null,
+        lastResult: pending.lastResult?.outcome ?? null
+      })),
+      recentErrors: [...this.lastErrors.entries()].map(([resource, entry]) => ({
+        resource,
+        at: iso(entry.at),
+        message: entry.message
+      }))
+    };
   }
 
   private get tokenEndpointUrl(): string {
