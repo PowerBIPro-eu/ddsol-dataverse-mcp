@@ -3,6 +3,7 @@ import { exec } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
 import { getJson } from './auth/entra-http.js';
+import { toDataverseError, withErrorDetailPreference } from './dataverse-error.js';
 import { AuthStatus, GLOBAL_DISCOVERY_RESOURCE, TokenManager } from './auth/token-manager.js';
 
 export interface DataverseConfig {
@@ -11,18 +12,6 @@ export interface DataverseConfig {
   clientSecret?: string;
   tenantId: string;
   authMode?: 'client_secret' | 'device';
-}
-
-export interface DataverseError {
-  error: {
-    code: string;
-    message: string;
-    innererror?: {
-      message: string;
-      type: string;
-      stacktrace: string;
-    };
-  };
 }
 
 export interface SolutionContext {
@@ -114,21 +103,22 @@ export class DataverseClient {
       }
     });
 
-    // Add request interceptor to handle authentication
+    // Authenticate every request. Writes also ask Dataverse for its error-detail
+    // annotations, which it only returns on request.
     this.httpClient.interceptors.request.use(async (config) => {
       config.headers.Authorization = `Bearer ${await this.ensureAuthenticated()}`;
+      if (config.method && config.method.toLowerCase() !== 'get') {
+        const existing = config.headers.get('Prefer');
+        config.headers.set('Prefer', withErrorDetailPreference(typeof existing === 'string' ? existing : undefined));
+      }
       return config;
     });
 
-    // Add response interceptor to handle errors
+    // Turn failures into errors with the full Dataverse error details and no request data.
     this.httpClient.interceptors.response.use(
       (response) => response,
       (error) => {
-        if (error.response?.data?.error) {
-          const dataverseError = error.response.data as DataverseError;
-          throw new Error(`Dataverse API Error: ${dataverseError.error.message} (Code: ${dataverseError.error.code})`);
-        }
-        throw error;
+        throw toDataverseError(error);
       }
     );
   }
@@ -368,148 +358,45 @@ export class DataverseClient {
     await this.httpClient.delete(endpoint);
   }
 
-  // Metadata-specific methods
-  async getMetadata<T = any>(endpoint: string, params?: Record<string, any>): Promise<T> {
-    const metadataClient = axios.create({
-      baseURL: `${this.config.dataverseUrl}/api/data/v9.2/`,
-      headers: this.getMetadataHeaders()
+  // Metadata operations and actions carry the MSCRM.SolutionUniqueName header, so new
+  // components are added to the solution from the solution context.
+  private async sendSolutionAware<T>(
+    method: 'get' | 'post' | 'patch' | 'put' | 'delete',
+    endpoint: string,
+    options: { data?: any; params?: Record<string, any>; headers?: Record<string, string> } = {}
+  ): Promise<AxiosResponse<T>> {
+    return this.httpClient.request<T>({
+      method,
+      url: endpoint,
+      data: options.data,
+      params: options.params,
+      headers: { ...this.getMetadataHeaders(), ...options.headers }
     });
+  }
 
-    // Add error interceptor
-    metadataClient.interceptors.response.use(
-      (response) => response,
-      (error) => {
-        if (error.response?.data?.error) {
-          const dataverseError = error.response.data as DataverseError;
-          throw new Error(`Dataverse API Error: ${dataverseError.error.message} (Code: ${dataverseError.error.code})`);
-        }
-        throw error;
-      }
-    );
-
-    metadataClient.defaults.headers.Authorization = `Bearer ${await this.ensureAuthenticated()}`;
-
-    const response: AxiosResponse<T> = await metadataClient.get(endpoint, { params });
-    return response.data;
+  // Metadata-specific methods
+  async getMetadata<T = any>(endpoint: string, params?: Record<string, any>, additionalHeaders?: Record<string, string>): Promise<T> {
+    return (await this.sendSolutionAware<T>('get', endpoint, { params, headers: additionalHeaders })).data;
   }
 
   async postMetadata<T = any>(endpoint: string, data?: any): Promise<T> {
-    const metadataClient = axios.create({
-      baseURL: `${this.config.dataverseUrl}/api/data/v9.2/`,
-      headers: this.getMetadataHeaders()
-    });
-
-    // Add error interceptor
-    metadataClient.interceptors.response.use(
-      (response) => response,
-      (error) => {
-        if (error.response?.data?.error) {
-          const dataverseError = error.response.data as DataverseError;
-          throw new Error(`Dataverse API Error: ${dataverseError.error.message} (Code: ${dataverseError.error.code})`);
-        }
-        throw error;
-      }
-    );
-
-    metadataClient.defaults.headers.Authorization = `Bearer ${await this.ensureAuthenticated()}`;
-
-    const response: AxiosResponse<T> = await metadataClient.post(endpoint, data);
-    return response.data;
+    return (await this.sendSolutionAware<T>('post', endpoint, { data })).data;
   }
 
   async patchMetadata<T = any>(endpoint: string, data?: any): Promise<T> {
-    const metadataClient = axios.create({
-      baseURL: `${this.config.dataverseUrl}/api/data/v9.2/`,
-      headers: this.getMetadataHeaders()
-    });
-
-    // Add error interceptor
-    metadataClient.interceptors.response.use(
-      (response) => response,
-      (error) => {
-        if (error.response?.data?.error) {
-          const dataverseError = error.response.data as DataverseError;
-          throw new Error(`Dataverse API Error: ${dataverseError.error.message} (Code: ${dataverseError.error.code})`);
-        }
-        throw error;
-      }
-    );
-
-    metadataClient.defaults.headers.Authorization = `Bearer ${await this.ensureAuthenticated()}`;
-
-    const response: AxiosResponse<T> = await metadataClient.patch(endpoint, data);
-    return response.data;
+    return (await this.sendSolutionAware<T>('patch', endpoint, { data })).data;
   }
 
   async putMetadata<T = any>(endpoint: string, data?: any, additionalHeaders?: Record<string, string>): Promise<T> {
-    const headers = { ...this.getMetadataHeaders(), ...additionalHeaders };
-    const metadataClient = axios.create({
-      baseURL: `${this.config.dataverseUrl}/api/data/v9.2/`,
-      headers
-    });
-
-    // Add error interceptor
-    metadataClient.interceptors.response.use(
-      (response) => response,
-      (error) => {
-        if (error.response?.data?.error) {
-          const dataverseError = error.response.data as DataverseError;
-          throw new Error(`Dataverse API Error: ${dataverseError.error.message} (Code: ${dataverseError.error.code})`);
-        }
-        throw error;
-      }
-    );
-
-    metadataClient.defaults.headers.Authorization = `Bearer ${await this.ensureAuthenticated()}`;
-
-    const response: AxiosResponse<T> = await metadataClient.put(endpoint, data);
-    return response.data;
+    return (await this.sendSolutionAware<T>('put', endpoint, { data, headers: additionalHeaders })).data;
   }
 
   async deleteMetadata(endpoint: string): Promise<void> {
-    const metadataClient = axios.create({
-      baseURL: `${this.config.dataverseUrl}/api/data/v9.2/`,
-      headers: this.getMetadataHeaders()
-    });
-
-    // Add error interceptor
-    metadataClient.interceptors.response.use(
-      (response) => response,
-      (error) => {
-        if (error.response?.data?.error) {
-          const dataverseError = error.response.data as DataverseError;
-          throw new Error(`Dataverse API Error: ${dataverseError.error.message} (Code: ${dataverseError.error.code})`);
-        }
-        throw error;
-      }
-    );
-
-    metadataClient.defaults.headers.Authorization = `Bearer ${await this.ensureAuthenticated()}`;
-
-    await metadataClient.delete(endpoint);
+    await this.sendSolutionAware('delete', endpoint);
   }
 
   // Action-specific method for calling Dataverse actions
   async callAction<T = any>(actionName: string, data?: any): Promise<T> {
-    const actionClient = axios.create({
-      baseURL: `${this.config.dataverseUrl}/api/data/v9.2/`,
-      headers: this.getMetadataHeaders()
-    });
-
-    // Add error interceptor
-    actionClient.interceptors.response.use(
-      (response) => response,
-      (error) => {
-        if (error.response?.data?.error) {
-          const dataverseError = error.response.data as DataverseError;
-          throw new Error(`Dataverse API Error: ${dataverseError.error.message} (Code: ${dataverseError.error.code})`);
-        }
-        throw error;
-      }
-    );
-
-    actionClient.defaults.headers.Authorization = `Bearer ${await this.ensureAuthenticated()}`;
-
     // Actions should be called with Microsoft.Dynamics.CRM prefix for bound actions
     // Global actions and option set actions don't need the prefix
     const globalActions = [
@@ -519,31 +406,12 @@ export class DataverseClient {
       'AddSolutionComponent', 'RemoveSolutionComponent'
     ];
     const actionUrl = globalActions.includes(actionName) ? actionName : `Microsoft.Dynamics.CRM.${actionName}`;
-    const response: AxiosResponse<T> = await actionClient.post(actionUrl, data);
-    return response.data;
+    return (await this.sendSolutionAware<T>('post', actionUrl, { data })).data;
   }
 
   // Action-specific method for calling Dataverse actions bound to a specific record
   async callBoundAction<T = any>(entitySetName: string, entityId: string, actionName: string, data?: any): Promise<T> {
-    const actionClient = axios.create({
-      baseURL: `${this.config.dataverseUrl}/api/data/v9.2/`,
-      headers: this.getMetadataHeaders()
-    });
-
-    actionClient.interceptors.response.use(
-      (response) => response,
-      (error) => {
-        if (error.response?.data?.error) {
-          const dataverseError = error.response.data as DataverseError;
-          throw new Error(`Dataverse API Error: ${dataverseError.error.message} (Code: ${dataverseError.error.code})`);
-        }
-        throw error;
-      }
-    );
-
-    actionClient.defaults.headers.Authorization = `Bearer ${await this.ensureAuthenticated()}`;
-
-    const response: AxiosResponse<T> = await actionClient.post(`${entitySetName}(${entityId})/Microsoft.Dynamics.CRM.${actionName}`, data);
-    return response.data;
+    const actionUrl = `${entitySetName}(${entityId})/Microsoft.Dynamics.CRM.${actionName}`;
+    return (await this.sendSolutionAware<T>('post', actionUrl, { data })).data;
   }
 }
