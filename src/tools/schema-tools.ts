@@ -153,7 +153,7 @@ export async function exportSolutionSchema(
     // Collect debug messages to return in response
     const debugMessages: string[] = [];
     const log = (message: string) => {
-      console.log(message);
+      console.error(message);
       debugMessages.push(message);
     };
     
@@ -745,7 +745,7 @@ export async function generateMermaidDiagram(
     
     const debugMessages: string[] = [];
     const log = (message: string) => {
-      console.log(message);
+      console.error(message);
       debugMessages.push(message);
     };
     
