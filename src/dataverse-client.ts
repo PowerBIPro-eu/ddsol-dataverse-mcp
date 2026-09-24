@@ -1,7 +1,7 @@
 import axios, { AxiosInstance, AxiosResponse } from 'axios';
 import { exec } from 'child_process';
 import { getJson } from './auth/entra-http.js';
-import { toDataverseError, withErrorDetailPreference } from './dataverse-error.js';
+import { DataverseRequestError, toDataverseError, withErrorDetailPreference } from './dataverse-error.js';
 import { normalizeEnvironmentUrl } from './environment-url.js';
 import { LastEnvironment, PROJECT_CONFIG_FILE, WorkspaceState, resolveStateDir } from './workspace-state.js';
 import { AuthStatus, GLOBAL_DISCOVERY_RESOURCE, TokenManager } from './auth/token-manager.js';
@@ -64,6 +64,9 @@ function copyToClipboard(text: string): void {
 export type SolutionContextSource = 'project' | 'session';
 export type SetSolutionContextOutcome = 'project-created' | 'project-updated' | 'project-default' | 'session-override';
 
+/** A read failing with "does not exist" within windowMs after a write is retried once after delayMs. */
+export const readRetry = { windowMs: 60_000, delayMs: 3000 };
+
 function sameSolution(a: string, b: string): boolean {
   return a.toLowerCase() === b.toLowerCase();
 }
@@ -80,6 +83,8 @@ export class DataverseClient {
   private verifiedSolutions = new Set<string>();
   // Where the active environment came from: DATAVERSE_URL, or set_dataverse_environment in this session.
   private environmentSource: 'DATAVERSE_URL' | 'session' | null;
+  // When this server last completed a write; see withReadRetry.
+  private lastWriteAt = 0;
 
   constructor(config: DataverseConfig) {
     this.config = config;
@@ -129,7 +134,12 @@ export class DataverseClient {
 
     // Turn failures into errors with the full Dataverse error details and no request data.
     this.httpClient.interceptors.response.use(
-      (response) => response,
+      (response) => {
+        if (response.config.method && response.config.method.toLowerCase() !== 'get') {
+          this.lastWriteAt = Date.now();
+        }
+        return response;
+      },
       (error) => {
         throw toDataverseError(error);
       }
@@ -408,8 +418,27 @@ export class DataverseClient {
 
   // Generic HTTP methods
   async get<T = any>(endpoint: string, params?: Record<string, any>): Promise<T> {
-    const response: AxiosResponse<T> = await this.httpClient.get(endpoint, { params });
-    return response.data;
+    return this.withReadRetry(async (headers) => {
+      const response: AxiosResponse<T> = await this.httpClient.get(endpoint, { params, headers });
+      return response.data;
+    });
+  }
+
+  // Right after a create, Dataverse can briefly answer "does not exist" for the new
+  // component or record. When this server wrote something within the last minute, such a
+  // read is retried once after a short pause, bypassing the metadata cache.
+  private async withReadRetry<T>(read: (headers?: Record<string, string>) => Promise<T>): Promise<T> {
+    try {
+      return await read();
+    } catch (error) {
+      const code = error instanceof DataverseRequestError ? error.code : undefined;
+      const recentWrite = Date.now() - this.lastWriteAt < readRetry.windowMs;
+      if (!recentWrite || (code !== '0x80040217' && code !== '0x80060888')) {
+        throw error;
+      }
+      await new Promise((resolve) => setTimeout(resolve, readRetry.delayMs));
+      return read({ Consistency: 'Strong' });
+    }
   }
 
   async post<T = any>(endpoint: string, data?: any, additionalHeaders?: Record<string, string>): Promise<T> {
@@ -453,7 +482,9 @@ export class DataverseClient {
 
   // Metadata-specific methods
   async getMetadata<T = any>(endpoint: string, params?: Record<string, any>, additionalHeaders?: Record<string, string>): Promise<T> {
-    return (await this.sendSolutionAware<T>('get', endpoint, { params, headers: additionalHeaders })).data;
+    return this.withReadRetry(async (retryHeaders) =>
+      (await this.sendSolutionAware<T>('get', endpoint, { params, headers: { ...additionalHeaders, ...retryHeaders } })).data
+    );
   }
 
   async postMetadata<T = any>(endpoint: string, data?: any): Promise<T> {

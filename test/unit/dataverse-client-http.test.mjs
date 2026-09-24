@@ -58,7 +58,8 @@ before(async () => {
     expires_at: Date.now() + 3_600_000
   }));
 
-  const { DataverseClient } = await import('../../build/dataverse-client.js');
+  const { DataverseClient, readRetry } = await import('../../build/dataverse-client.js');
+  readRetry.delayMs = 0;
   client = new DataverseClient({ dataverseUrl: baseUrl, clientId: CLIENT_ID, tenantId: TENANT, authMode: 'device' });
 });
 
