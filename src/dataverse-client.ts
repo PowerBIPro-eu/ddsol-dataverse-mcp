@@ -2,7 +2,8 @@ import axios, { AxiosInstance, AxiosResponse } from 'axios';
 import { exec } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
-import { AuthHttpError, getJson, postForm } from './auth/entra-http.js';
+import { getJson } from './auth/entra-http.js';
+import { GLOBAL_DISCOVERY_RESOURCE, TokenManager } from './auth/token-manager.js';
 
 export interface DataverseConfig {
   dataverseUrl: string;
@@ -10,24 +11,6 @@ export interface DataverseConfig {
   clientSecret?: string;
   tenantId: string;
   authMode?: 'client_secret' | 'device';
-}
-
-export interface AuthToken {
-  access_token: string;
-  token_type: string;
-  expires_in: number;
-  expires_at: number;
-  refresh_token?: string;
-}
-
-interface PendingDeviceCode {
-  scope: string;
-  device_code: string;
-  user_code: string;
-  verification_uri: string;
-  expires_at: number;
-  interval: number;
-  lastPollAt: number;
 }
 
 export interface DataverseError {
@@ -91,12 +74,10 @@ function copyToClipboard(text: string): void {
 export class DataverseClient {
   private config: DataverseConfig;
   private httpClient: AxiosInstance;
-  private authToken: AuthToken | null = null;
-  private globalDiscoveryToken: AuthToken | null = null;
+  private tokens: TokenManager;
   private solutionUniqueName: string | null = null;
   private solutionContext: SolutionContext | null = null;
   private contextFilePath: string;
-  private authCacheFilePath: string;
   private activeEnvironmentFilePath: string;
 
   constructor(config: DataverseConfig) {
@@ -109,9 +90,16 @@ export class DataverseClient {
       this.config.dataverseUrl = persistedEnvironmentUrl;
     }
 
-    const authCacheKey = Buffer.from(`${config.tenantId}:${config.clientId}:${this.config.dataverseUrl}`).toString('hex');
-    this.authCacheFilePath = path.join(process.env.LOCALAPPDATA || process.env.HOME || process.cwd(), `dataverse-mcp-auth-${authCacheKey}.json`);
-    this.loadAuthToken();
+    this.tokens = new TokenManager({
+      tenantId: config.tenantId,
+      clientId: config.clientId,
+      clientSecret: config.clientSecret,
+      authMode: config.authMode === 'device' || !config.clientSecret ? 'device' : 'client_secret',
+      onNewDeviceCode: (verificationUri, userCode) => {
+        openUrlInBrowser(verificationUri);
+        copyToClipboard(userCode);
+      }
+    });
 
     // Load persisted solution context on startup
     this.loadSolutionContext();
@@ -128,10 +116,7 @@ export class DataverseClient {
 
     // Add request interceptor to handle authentication
     this.httpClient.interceptors.request.use(async (config) => {
-      await this.ensureAuthenticated();
-      if (this.authToken) {
-        config.headers.Authorization = `Bearer ${this.authToken.access_token}`;
-      }
+      config.headers.Authorization = `Bearer ${await this.ensureAuthenticated()}`;
       return config;
     });
 
@@ -148,305 +133,16 @@ export class DataverseClient {
     );
   }
 
-  private loadAuthToken(): void {
-    try {
-      if (fs.existsSync(this.authCacheFilePath)) {
-        const cachedToken = JSON.parse(fs.readFileSync(this.authCacheFilePath, 'utf8'));
-        if (cachedToken?.access_token) {
-          this.authToken = cachedToken;
-        }
-      }
-    } catch (error) {
-      console.error('Failed to load cached Dataverse authentication:', error instanceof Error ? error.message : 'Unknown error');
-    }
-  }
-
-  private saveAuthToken(): void {
-    try {
-      if (this.authToken) {
-        fs.writeFileSync(this.authCacheFilePath, JSON.stringify(this.authToken, null, 2), 'utf8');
-      }
-    } catch (error) {
-      console.error('Failed to save cached Dataverse authentication:', error instanceof Error ? error.message : 'Unknown error');
-    }
-  }
-
-  private getDataverseScope(): string {
-    return `${this.config.dataverseUrl.replace(/\/+$/, '')}/user_impersonation offline_access`;
-  }
-
-  private async authenticate(): Promise<AuthToken> {
-    try {
-      if (this.config.authMode === 'device' || !this.config.clientSecret) {
-        return await this.authenticateInteractive('org', this.getDataverseScope());
-      }
-      return await this.authenticateWithClientSecret();
-    } catch (error) {
-      throw new Error(`Authentication failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
-    }
-  }
-
-  private async authenticateWithClientSecret(): Promise<AuthToken> {
-    const tokenUrl = `https://login.microsoftonline.com/${this.config.tenantId}/oauth2/v2.0/token`;
-
-    const data = await postForm(tokenUrl, {
-      grant_type: 'client_credentials',
-      client_id: this.config.clientId,
-      client_secret: this.config.clientSecret as string,
-      scope: `${this.config.dataverseUrl}/.default`
-    }, `Microsoft Entra token endpoint (${tokenUrl})`);
-
-    return {
-      ...data,
-      expires_at: Date.now() + (data.expires_in * 1000) - 60000
-    };
-  }
-
-  private async requestDeviceCode(scope: string): Promise<any> {
-    const deviceCodeUrl = `https://login.microsoftonline.com/${this.config.tenantId}/oauth2/v2.0/devicecode`;
-    const deviceCode = await postForm(deviceCodeUrl, {
-      client_id: this.config.clientId,
-      scope
-    }, `Microsoft Entra device-code endpoint (${deviceCodeUrl})`);
-    console.error('\nDataverse authentication required. Open this URL in a browser:');
-    console.error(deviceCode.verification_uri);
-    console.error(`Enter code: ${deviceCode.user_code}`);
-    if (deviceCode.message) {
-      console.error(deviceCode.message);
-    }
-    // Microsoft Entra's device code endpoint does not support a pre-filled
-    // verification_uri_complete, so just open the plain sign-in page and
-    // copy the code to the clipboard for a quick paste.
-    openUrlInBrowser(deviceCode.verification_uri);
-    copyToClipboard(deviceCode.user_code);
-    return deviceCode;
-  }
-
-  private async pollDeviceCodeToken(deviceCode: any): Promise<AuthToken> {
-    const tokenUrl = `https://login.microsoftonline.com/${this.config.tenantId}/oauth2/v2.0/token`;
-    const pollParams = {
-      grant_type: 'urn:ietf:params:oauth:grant-type:device_code',
-      client_id: this.config.clientId,
-      device_code: deviceCode.device_code
-    };
-    const interval = Math.max(Number(deviceCode.interval || 5), 5) * 1000;
-    const expiresAt = Date.now() + Number(deviceCode.expires_in || 900) * 1000;
-    while (Date.now() < expiresAt) {
-      await new Promise((resolve) => setTimeout(resolve, interval));
-      try {
-        const data = await postForm(tokenUrl, pollParams, `Microsoft Entra token endpoint (${tokenUrl})`);
-        return {
-          ...data,
-          expires_at: Date.now() + (data.expires_in * 1000) - 60000
-        };
-      } catch (error: any) {
-        const errorCode = error instanceof AuthHttpError ? error.entra?.error : undefined;
-        if (errorCode === 'authorization_declined' || errorCode === 'access_denied') {
-          throw new Error('Device authentication was denied.');
-        }
-        if (errorCode === 'expired_token') {
-          break;
-        }
-        // authorization_pending, slow_down, or any other transient/unexpected error:
-        // keep polling rather than killing the whole flow on one bad attempt.
-        console.error('Device code poll attempt failed, retrying:', error instanceof Error ? error.message : String(error));
-        continue;
-      }
-    }
-    throw new Error('Device authentication timed out. Run any Dataverse operation again to start a new login flow.');
-  }
-
-  private async authenticateWithDeviceCode(scope: string = this.getDataverseScope()): Promise<AuthToken> {
-    const deviceCode = await this.requestDeviceCode(scope);
-    return await this.pollDeviceCodeToken(deviceCode);
-  }
-
-  // Persists the pending device-code flow to disk (keyed by 'kind' + scope) so it survives
-  // the MCP server process being restarted between tool calls (e.g. idle stdio recycling).
-  // Each call does at most one poll attempt against the persisted device_code, instead of
-  // relying on an in-memory background loop that wouldn't outlive a process restart.
-  private getPendingDeviceCodeFilePath(kind: string): string {
-    return path.join(process.cwd(), `.dataverse-mcp-pending-${kind}.json`);
-  }
-
-  private loadPendingDeviceCode(filePath: string): PendingDeviceCode | null {
-    try {
-      if (fs.existsSync(filePath)) {
-        return JSON.parse(fs.readFileSync(filePath, 'utf8'));
-      }
-    } catch {
-      // Ignore a corrupt/partial pending file; a new device code will be requested.
-    }
-    return null;
-  }
-
-  private savePendingDeviceCode(filePath: string, pending: PendingDeviceCode): void {
-    try {
-      fs.writeFileSync(filePath, JSON.stringify(pending, null, 2), 'utf8');
-    } catch (error) {
-      console.error('Failed to persist pending device code:', error instanceof Error ? error.message : 'Unknown error');
-    }
-  }
-
-  private deletePendingDeviceCode(filePath: string): void {
-    try {
-      if (fs.existsSync(filePath)) {
-        fs.unlinkSync(filePath);
-      }
-    } catch {
-      // Best effort cleanup.
-    }
-  }
-
-  private formatSignInMessage(pending: PendingDeviceCode): string {
-    return `Sign-in required to continue.\n\nOpen this URL: ${pending.verification_uri}\nEnter code: ${pending.user_code}\n\n(A browser window was opened automatically and the code was copied to your clipboard.)\n\nRun this tool again after completing sign-in.`;
-  }
-
-  private async pollDeviceCodeTokenOnce(pending: PendingDeviceCode): Promise<AuthToken> {
-    const tokenUrl = `https://login.microsoftonline.com/${this.config.tenantId}/oauth2/v2.0/token`;
-    try {
-      const data = await postForm(tokenUrl, {
-        grant_type: 'urn:ietf:params:oauth:grant-type:device_code',
-        client_id: this.config.clientId,
-        device_code: pending.device_code
-      }, `Microsoft Entra token endpoint (${tokenUrl})`);
-      return {
-        ...data,
-        expires_at: Date.now() + (data.expires_in * 1000) - 60000
-      };
-    } catch (error: any) {
-      const errorCode = error instanceof AuthHttpError ? error.entra?.error : undefined;
-      if (errorCode === 'authorization_declined' || errorCode === 'access_denied') {
-        throw new Error('Device authentication was denied.');
-      }
-      if (errorCode === 'expired_token') {
-        throw new Error('Device code expired. Run the tool again to start a new sign-in.');
-      }
-      // authorization_pending, slow_down, or an unexpected/transient error: keep
-      // showing the same code rather than failing the whole flow on one bad poll.
-      const stillPending: any = new Error('Sign-in still pending.');
-      stillPending.stillPending = true;
-      throw stillPending;
-    }
-  }
-
-  private async authenticateInteractive(kind: string, scope: string): Promise<AuthToken> {
-    const pendingFilePath = this.getPendingDeviceCodeFilePath(kind);
-    let pending = this.loadPendingDeviceCode(pendingFilePath);
-    if (pending && (pending.scope !== scope || Date.now() > pending.expires_at)) {
-      pending = null;
-    }
-
-    if (!pending) {
-      const deviceCode = await this.requestDeviceCode(scope);
-      pending = {
-        scope,
-        device_code: deviceCode.device_code,
-        user_code: deviceCode.user_code,
-        verification_uri: deviceCode.verification_uri,
-        expires_at: Date.now() + Number(deviceCode.expires_in || 900) * 1000,
-        interval: Math.max(Number(deviceCode.interval || 5), 5) * 1000,
-        lastPollAt: 0
-      };
-      this.savePendingDeviceCode(pendingFilePath, pending);
-      throw new Error(this.formatSignInMessage(pending));
-    }
-
-    // Respect the minimum polling interval even across separate tool calls/process restarts.
-    const waitRemaining = pending.interval - (Date.now() - pending.lastPollAt);
-    if (pending.lastPollAt && waitRemaining > 0) {
-      await new Promise((resolve) => setTimeout(resolve, waitRemaining));
-    }
-    pending.lastPollAt = Date.now();
-    this.savePendingDeviceCode(pendingFilePath, pending);
-
-    try {
-      const token = await this.pollDeviceCodeTokenOnce(pending);
-      this.deletePendingDeviceCode(pendingFilePath);
-      return token;
-    } catch (error: any) {
-      if (error.stillPending) {
-        throw new Error(this.formatSignInMessage(pending));
-      }
-      this.deletePendingDeviceCode(pendingFilePath);
-      throw error;
-    }
-  }
-
-  private async refreshAuthToken(): Promise<AuthToken | null> {
-    if (!this.authToken?.refresh_token) {
-      return null;
-    }
-    const tokenUrl = `https://login.microsoftonline.com/${this.config.tenantId}/oauth2/v2.0/token`;
-    const data = await postForm(tokenUrl, {
-      grant_type: 'refresh_token',
-      client_id: this.config.clientId,
-      refresh_token: this.authToken.refresh_token,
-      scope: this.getDataverseScope()
-    }, `Microsoft Entra token endpoint (${tokenUrl})`);
-    return {
-      ...this.authToken,
-      ...data,
-      expires_at: Date.now() + (data.expires_in * 1000) - 60000
-    };
-  }
-
-  private async ensureAuthenticated(): Promise<void> {
-    if (this.authToken && Date.now() < this.authToken.expires_at) {
-      return;
-    }
-    if (this.authToken?.refresh_token) {
-      try {
-        this.authToken = await this.refreshAuthToken();
-        this.saveAuthToken();
-        return;
-      } catch {
-        console.error('Cached Dataverse login could not be refreshed; starting interactive authentication.');
-      }
-    }
-    this.authToken = await this.authenticate();
-    this.saveAuthToken();
-  }
-
-  private async ensureGlobalDiscoveryAuthenticated(): Promise<void> {
-    const globalDiscoveryScope = 'https://globaldisco.crm.dynamics.com/user_impersonation offline_access';
-    if (this.globalDiscoveryToken && Date.now() < this.globalDiscoveryToken.expires_at) {
-      return;
-    }
-    if (this.globalDiscoveryToken?.refresh_token) {
-      try {
-        this.globalDiscoveryToken = await this.refreshGlobalDiscoveryToken();
-        return;
-      } catch {
-        console.error('Cached Global Discovery login could not be refreshed; starting interactive authentication.');
-      }
-    }
-    this.globalDiscoveryToken = await this.authenticateInteractive('globaldisco', globalDiscoveryScope);
-  }
-
-  private async refreshGlobalDiscoveryToken(): Promise<AuthToken | null> {
-    if (!this.globalDiscoveryToken?.refresh_token) {
-      return null;
-    }
-    const tokenUrl = `https://login.microsoftonline.com/${this.config.tenantId}/oauth2/v2.0/token`;
-    const data = await postForm(tokenUrl, {
-      grant_type: 'refresh_token',
-      client_id: this.config.clientId,
-      refresh_token: this.globalDiscoveryToken.refresh_token,
-      scope: 'https://globaldisco.crm.dynamics.com/user_impersonation offline_access'
-    }, `Microsoft Entra token endpoint (${tokenUrl})`);
-    return {
-      ...this.globalDiscoveryToken,
-      ...data,
-      expires_at: Date.now() + (data.expires_in * 1000) - 60000
-    };
+  // Returns an access token for the active environment, signing in if needed.
+  private async ensureAuthenticated(): Promise<string> {
+    return this.tokens.getAccessToken(this.config.dataverseUrl);
   }
 
   // Lists all Dataverse environments the signed-in user can access, via the Global Discovery Service
   async listEnvironments(): Promise<DataverseEnvironment[]> {
-    await this.ensureGlobalDiscoveryAuthenticated();
-    const instancesUrl = 'https://globaldisco.crm.dynamics.com/api/discovery/v2.0/Instances';
-    const data = await getJson(instancesUrl, this.globalDiscoveryToken!.access_token, `Global Discovery Service (${instancesUrl})`);
+    const accessToken = await this.tokens.getAccessToken(GLOBAL_DISCOVERY_RESOURCE);
+    const instancesUrl = `${GLOBAL_DISCOVERY_RESOURCE}/api/discovery/v2.0/Instances`;
+    const data = await getJson(instancesUrl, accessToken, `Global Discovery Service (${instancesUrl})`);
     return (data.value || []).map((instance: any) => ({
       friendlyName: instance.FriendlyName,
       uniqueName: instance.UniqueName,
@@ -472,10 +168,6 @@ export class DataverseClient {
     const normalizedUrl = targetUrl.replace(/\/+$/, '');
     this.config.dataverseUrl = normalizedUrl;
     this.httpClient.defaults.baseURL = `${normalizedUrl}/api/data/v9.2/`;
-    this.authToken = null;
-    const authCacheKey = Buffer.from(`${this.config.tenantId}:${this.config.clientId}:${normalizedUrl}`).toString('hex');
-    this.authCacheFilePath = path.join(process.env.LOCALAPPDATA || process.env.HOME || process.cwd(), `dataverse-mcp-auth-${authCacheKey}.json`);
-    this.loadAuthToken();
     this.saveActiveEnvironment(normalizedUrl);
     return normalizedUrl;
   }
@@ -690,10 +382,7 @@ export class DataverseClient {
       }
     );
 
-    await this.ensureAuthenticated();
-    if (this.authToken) {
-      metadataClient.defaults.headers.Authorization = `Bearer ${this.authToken.access_token}`;
-    }
+    metadataClient.defaults.headers.Authorization = `Bearer ${await this.ensureAuthenticated()}`;
 
     const response: AxiosResponse<T> = await metadataClient.get(endpoint, { params });
     return response.data;
@@ -717,10 +406,7 @@ export class DataverseClient {
       }
     );
 
-    await this.ensureAuthenticated();
-    if (this.authToken) {
-      metadataClient.defaults.headers.Authorization = `Bearer ${this.authToken.access_token}`;
-    }
+    metadataClient.defaults.headers.Authorization = `Bearer ${await this.ensureAuthenticated()}`;
 
     const response: AxiosResponse<T> = await metadataClient.post(endpoint, data);
     return response.data;
@@ -744,10 +430,7 @@ export class DataverseClient {
       }
     );
 
-    await this.ensureAuthenticated();
-    if (this.authToken) {
-      metadataClient.defaults.headers.Authorization = `Bearer ${this.authToken.access_token}`;
-    }
+    metadataClient.defaults.headers.Authorization = `Bearer ${await this.ensureAuthenticated()}`;
 
     const response: AxiosResponse<T> = await metadataClient.patch(endpoint, data);
     return response.data;
@@ -772,10 +455,7 @@ export class DataverseClient {
       }
     );
 
-    await this.ensureAuthenticated();
-    if (this.authToken) {
-      metadataClient.defaults.headers.Authorization = `Bearer ${this.authToken.access_token}`;
-    }
+    metadataClient.defaults.headers.Authorization = `Bearer ${await this.ensureAuthenticated()}`;
 
     const response: AxiosResponse<T> = await metadataClient.put(endpoint, data);
     return response.data;
@@ -799,10 +479,7 @@ export class DataverseClient {
       }
     );
 
-    await this.ensureAuthenticated();
-    if (this.authToken) {
-      metadataClient.defaults.headers.Authorization = `Bearer ${this.authToken.access_token}`;
-    }
+    metadataClient.defaults.headers.Authorization = `Bearer ${await this.ensureAuthenticated()}`;
 
     await metadataClient.delete(endpoint);
   }
@@ -826,10 +503,7 @@ export class DataverseClient {
       }
     );
 
-    await this.ensureAuthenticated();
-    if (this.authToken) {
-      actionClient.defaults.headers.Authorization = `Bearer ${this.authToken.access_token}`;
-    }
+    actionClient.defaults.headers.Authorization = `Bearer ${await this.ensureAuthenticated()}`;
 
     // Actions should be called with Microsoft.Dynamics.CRM prefix for bound actions
     // Global actions and option set actions don't need the prefix
@@ -862,10 +536,7 @@ export class DataverseClient {
       }
     );
 
-    await this.ensureAuthenticated();
-    if (this.authToken) {
-      actionClient.defaults.headers.Authorization = `Bearer ${this.authToken.access_token}`;
-    }
+    actionClient.defaults.headers.Authorization = `Bearer ${await this.ensureAuthenticated()}`;
 
     const response: AxiosResponse<T> = await actionClient.post(`${entitySetName}(${entityId})/Microsoft.Dynamics.CRM.${actionName}`, data);
     return response.data;
