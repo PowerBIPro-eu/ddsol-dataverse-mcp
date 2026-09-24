@@ -16,7 +16,7 @@ test('without an environment, Dataverse calls say so instead of starting a sign-
   const { DataverseClient } = await import('../../build/dataverse-client.js');
   const client = new DataverseClient({ dataverseUrl: '', clientId: 'client-a', tenantId: 'organizations', authMode: 'device' });
   await assert.rejects(client.get('accounts'), (error) => {
-    assert.match(error.message, /^No Dataverse environment is selected\./);
+    assert.match(error.message, /^No Dataverse environment is selected for this session\./);
     return true;
   });
 });

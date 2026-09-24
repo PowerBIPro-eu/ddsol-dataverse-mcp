@@ -1,10 +1,9 @@
 import axios, { AxiosInstance, AxiosResponse } from 'axios';
 import { exec } from 'child_process';
-import * as fs from 'fs';
-import * as path from 'path';
 import { getJson } from './auth/entra-http.js';
 import { toDataverseError, withErrorDetailPreference } from './dataverse-error.js';
 import { normalizeEnvironmentUrl } from './environment-url.js';
+import { LastEnvironment, PROJECT_CONFIG_FILE, WorkspaceState, resolveStateDir } from './workspace-state.js';
 import { AuthStatus, GLOBAL_DISCOVERY_RESOURCE, TokenManager } from './auth/token-manager.js';
 
 export interface DataverseConfig {
@@ -21,7 +20,8 @@ export interface SolutionContext {
   publisherUniqueName?: string;
   publisherDisplayName?: string;
   customizationPrefix?: string;
-  lastUpdated: string;
+  /** No longer written; kept so older callers still type-check. */
+  lastUpdated?: string;
 }
 
 export interface DataverseEnvironment {
@@ -61,22 +61,34 @@ function copyToClipboard(text: string): void {
   }
 }
 
+export type SolutionContextSource = 'project' | 'session';
+export type SetSolutionContextOutcome = 'project-created' | 'project-updated' | 'project-default' | 'session-override';
+
+function sameSolution(a: string, b: string): boolean {
+  return a.toLowerCase() === b.toLowerCase();
+}
+
 export class DataverseClient {
   private config: DataverseConfig;
   private httpClient: AxiosInstance;
   private tokens: TokenManager;
-  private solutionUniqueName: string | null = null;
-  private solutionContext: SolutionContext | null = null;
-  private contextFilePath: string;
-  private activeEnvironmentFilePath: string;
+  private workspace: WorkspaceState;
+  // The solution named by the project's .dataverse-mcp, and an override for this session.
+  private projectSolution: SolutionContext | null;
+  private sessionSolution: SolutionContext | null = null;
+  private solutionClearedForSession = false;
+  private verifiedSolutions = new Set<string>();
+  // Where the active environment came from: DATAVERSE_URL, or set_dataverse_environment in this session.
+  private environmentSource: 'DATAVERSE_URL' | 'session' | null;
 
   constructor(config: DataverseConfig) {
     this.config = config;
-    this.contextFilePath = path.join(process.cwd(), '.dataverse-mcp');
-    this.activeEnvironmentFilePath = path.join(process.cwd(), '.dataverse-mcp-environment.json');
+    this.workspace = new WorkspaceState(process.cwd(), resolveStateDir());
+    this.workspace.migrateLegacyFiles();
 
-    const persistedEnvironmentUrl = this.loadActiveEnvironment();
-    this.config.dataverseUrl = this.normalizeConfiguredUrl(persistedEnvironmentUrl || config.dataverseUrl);
+    // The environment is chosen per session; only DATAVERSE_URL preselects one.
+    this.config.dataverseUrl = this.normalizeConfiguredUrl(config.dataverseUrl);
+    this.environmentSource = this.config.dataverseUrl ? 'DATAVERSE_URL' : null;
 
     this.tokens = new TokenManager({
       tenantId: config.tenantId,
@@ -89,9 +101,11 @@ export class DataverseClient {
       }
     });
 
-    // Load persisted solution context on startup
-    this.loadSolutionContext();
-    
+    this.projectSolution = this.workspace.readProjectConfig();
+    if (this.projectSolution) {
+      console.error(`Loaded solution context from ${PROJECT_CONFIG_FILE}: ${this.projectSolution.solutionUniqueName} (${this.projectSolution.solutionDisplayName || 'display name not stored'})`);
+    }
+
     this.httpClient = axios.create({
       baseURL: `${this.config.dataverseUrl}/api/data/v9.2/`,
       headers: {
@@ -125,11 +139,21 @@ export class DataverseClient {
   // Returns an access token for the active environment, signing in if needed.
   private async ensureAuthenticated(): Promise<string> {
     if (!this.config.dataverseUrl) {
-      throw new Error(
-        'No Dataverse environment is selected. Call list_dataverse_environments to see the environments you can use, then set_dataverse_environment.'
-      );
+      throw new Error(this.noEnvironmentMessage());
     }
     return this.tokens.getAccessToken(this.config.dataverseUrl);
+  }
+
+  private noEnvironmentMessage(): string {
+    const lines = [
+      'No Dataverse environment is selected for this session. Ask the user which environment to work in, then call set_dataverse_environment (list_dataverse_environments shows the options).'
+    ];
+    const last = this.workspace.readLastEnvironment();
+    if (last) {
+      const when = last.at ? ` (selected ${last.at.slice(0, 10)})` : '';
+      lines.push(`Last environment used in this folder: ${last.url}${when}. Confirm it with the user before selecting it again.`);
+    }
+    return lines.join('\n');
   }
 
   // An unusable URL in the configuration must not stop the server: it starts without
@@ -161,7 +185,8 @@ export class DataverseClient {
     }));
   }
 
-  // Switches the active Dataverse environment; accepts a URL, unique name, or friendly name
+  // Switches the active environment for this session; accepts a URL, unique name, or friendly name.
+  // The choice is not carried into new sessions; it is only remembered as this folder's suggestion.
   async setActiveEnvironment(target: string): Promise<string> {
     let targetUrl = target;
     if (!/^https?:\/\//i.test(target)) {
@@ -176,7 +201,8 @@ export class DataverseClient {
     const normalizedUrl = normalizeEnvironmentUrl(targetUrl);
     this.config.dataverseUrl = normalizedUrl;
     this.httpClient.defaults.baseURL = `${normalizedUrl}/api/data/v9.2/`;
-    this.saveActiveEnvironment(normalizedUrl);
+    this.environmentSource = 'session';
+    this.workspace.writeLastEnvironment(normalizedUrl);
     return normalizedUrl;
   }
 
@@ -189,106 +215,150 @@ export class DataverseClient {
     return this.config.dataverseUrl;
   }
 
-  private loadActiveEnvironment(): string | null {
-    try {
-      if (fs.existsSync(this.activeEnvironmentFilePath)) {
-        const data = JSON.parse(fs.readFileSync(this.activeEnvironmentFilePath, 'utf8'));
-        if (data?.dataverseUrl) {
-          return data.dataverseUrl;
-        }
-      }
-    } catch (error) {
-      console.warn('Failed to load persisted active Dataverse environment:', error instanceof Error ? error.message : 'Unknown error');
-    }
-    return null;
+  /** The active environment, where it came from, and the environment last used in this folder. */
+  getEnvironmentInfo(): { url: string | null; source: 'DATAVERSE_URL' | 'session' | null; lastUsedInFolder: LastEnvironment | null } {
+    return {
+      url: this.config.dataverseUrl || null,
+      source: this.environmentSource,
+      lastUsedInFolder: this.workspace.readLastEnvironment()
+    };
   }
 
-  private saveActiveEnvironment(url: string): void {
-    try {
-      fs.writeFileSync(this.activeEnvironmentFilePath, JSON.stringify({ dataverseUrl: url, savedAt: new Date().toISOString() }, null, 2), 'utf8');
-    } catch (error) {
-      console.warn('Failed to persist active Dataverse environment:', error instanceof Error ? error.message : 'Unknown error');
+  // Looks a solution up in the active environment; null if it does not exist there.
+  private async fetchSolutionContext(solutionUniqueName: string): Promise<SolutionContext | null> {
+    const escaped = solutionUniqueName.replace(/'/g, "''");
+    const result = await this.get(
+      `solutions?$filter=uniquename eq '${escaped}'&$expand=publisherid($select=uniquename,friendlyname,customizationprefix)&$select=uniquename,friendlyname`
+    );
+    const solution = result?.value?.[0];
+    if (!solution) {
+      return null;
     }
+    const publisher = solution.publisherid;
+    return {
+      solutionUniqueName: solution.uniquename,
+      solutionDisplayName: solution.friendlyname,
+      publisherUniqueName: publisher?.uniquename,
+      publisherDisplayName: publisher?.friendlyname,
+      customizationPrefix: publisher?.customizationprefix
+    };
   }
 
-  // Solution context persistence methods
-  private loadSolutionContext(): void {
+  /**
+   * Sets the solution context. Without a project default this creates .dataverse-mcp (to be
+   * committed); a solution other than the project default becomes an override for this
+   * session only, unless saveAsProjectDefault is set.
+   */
+  async setSolutionContext(solutionUniqueName: string, options: { saveAsProjectDefault?: boolean } = {}): Promise<SetSolutionContextOutcome> {
+    let context: SolutionContext | null;
     try {
-      if (fs.existsSync(this.contextFilePath)) {
-        const contextData = fs.readFileSync(this.contextFilePath, 'utf8');
-        this.solutionContext = JSON.parse(contextData);
-        this.solutionUniqueName = this.solutionContext?.solutionUniqueName || null;
-        
-        if (this.solutionContext) {
-          console.error(`Loaded solution context: ${this.solutionContext.solutionUniqueName} (${this.solutionContext.solutionDisplayName || 'Unknown'})`);
-        }
-      }
-    } catch (error) {
-      console.warn('Failed to load solution context from .dataverse-mcp file:', error instanceof Error ? error.message : 'Unknown error');
-      // Reset context on error
-      this.solutionContext = null;
-      this.solutionUniqueName = null;
-    }
-  }
-
-  private saveSolutionContext(): void {
-    try {
-      if (this.solutionContext) {
-        fs.writeFileSync(this.contextFilePath, JSON.stringify(this.solutionContext, null, 2), 'utf8');
-      } else {
-        // Remove file when context is cleared
-        if (fs.existsSync(this.contextFilePath)) {
-          fs.unlinkSync(this.contextFilePath);
-        }
-      }
-    } catch (error) {
-      console.warn('Failed to save solution context to .dataverse-mcp file:', error instanceof Error ? error.message : 'Unknown error');
-    }
-  }
-
-  // Enhanced solution context methods
-  async setSolutionContext(solutionUniqueName: string): Promise<void> {
-    try {
-      // Fetch solution details to populate context
-      const result = await this.get(
-        `solutions?$filter=uniquename eq '${solutionUniqueName}'&$expand=publisherid($select=uniquename,friendlyname,customizationprefix)&$select=uniquename,friendlyname`
-      );
-
-      if (!result.value || result.value.length === 0) {
+      context = await this.fetchSolutionContext(solutionUniqueName);
+      if (!context) {
         throw new Error(`Solution '${solutionUniqueName}' not found`);
       }
-
-      const solution = result.value[0];
-      const publisher = solution.publisherid;
-
-      this.solutionContext = {
-        solutionUniqueName: solution.uniquename,
-        solutionDisplayName: solution.friendlyname,
-        publisherUniqueName: publisher?.uniquename,
-        publisherDisplayName: publisher?.friendlyname,
-        customizationPrefix: publisher?.customizationprefix,
-        lastUpdated: new Date().toISOString()
-      };
-
-      this.solutionUniqueName = solutionUniqueName;
-      this.saveSolutionContext();
+      const current = this.projectSolution;
+      if (current && !options.saveAsProjectDefault && sameSolution(current.solutionUniqueName, context.solutionUniqueName)) {
+        this.assertPrefixMatches(current, context, PROJECT_CONFIG_FILE);
+      }
     } catch (error) {
       throw new Error(`Failed to set solution context: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
+
+    this.solutionClearedForSession = false;
+    this.verifiedSolutions.add(this.verificationKey(context.solutionUniqueName));
+    const project = this.projectSolution;
+    if (!project || options.saveAsProjectDefault) {
+      this.workspace.writeProjectConfig(context);
+      this.projectSolution = context;
+      this.sessionSolution = null;
+      return project ? 'project-updated' : 'project-created';
+    }
+    if (sameSolution(project.solutionUniqueName, context.solutionUniqueName)) {
+      this.projectSolution = { ...project, ...context };
+      this.sessionSolution = null;
+      return 'project-default';
+    }
+    this.sessionSolution = context;
+    return 'session-override';
+  }
+
+  private verificationKey(solutionUniqueName: string): string {
+    return `${this.config.dataverseUrl}|${solutionUniqueName.toLowerCase()}`;
+  }
+
+  private assertPrefixMatches(expected: SolutionContext, actual: SolutionContext, source: string): void {
+    const want = expected.customizationPrefix;
+    const got = actual.customizationPrefix;
+    if (want && got && want.toLowerCase() !== got.toLowerCase()) {
+      throw new Error(
+        `Solution '${actual.solutionUniqueName}' in ${this.config.dataverseUrl} belongs to a publisher with prefix '${got}', ` +
+        `but ${source} expects '${want}'. Check that this is the right environment.`
+      );
+    }
+  }
+
+  /**
+   * Confirms that the session's solution exists in the active environment and that its
+   * publisher prefix matches what .dataverse-mcp expects, then loads its details. Without
+   * an environment there is nothing to check against, and the context is returned as is.
+   */
+  async verifySolutionContext(): Promise<SolutionContext | null> {
+    const current = this.getSolutionContext();
+    if (!current || !this.config.dataverseUrl) {
+      return current;
+    }
+    if (this.verifiedSolutions.has(this.verificationKey(current.solutionUniqueName))) {
+      return current;
+    }
+    const source = this.getSolutionContextSource() === 'project' ? PROJECT_CONFIG_FILE : 'this session';
+    const fetched = await this.fetchSolutionContext(current.solutionUniqueName);
+    if (!fetched) {
+      throw new Error(`Solution '${current.solutionUniqueName}' from ${source} does not exist in ${this.config.dataverseUrl}. Check that this is the right environment.`);
+    }
+    this.assertPrefixMatches(current, fetched, source);
+    const verified = { ...current, ...fetched };
+    if (this.sessionSolution) {
+      this.sessionSolution = verified;
+    } else {
+      this.projectSolution = verified;
+    }
+    this.verifiedSolutions.add(this.verificationKey(current.solutionUniqueName));
+    return verified;
+  }
+
+  /** Whether the session's solution has been checked against the active environment. */
+  isSolutionContextVerified(): boolean {
+    const current = this.getSolutionContext();
+    return !!current && !!this.config.dataverseUrl && this.verifiedSolutions.has(this.verificationKey(current.solutionUniqueName));
   }
 
   getSolutionContext(): SolutionContext | null {
-    return this.solutionContext;
+    if (this.solutionClearedForSession) {
+      return null;
+    }
+    return this.sessionSolution ?? this.projectSolution;
+  }
+
+  getSolutionContextSource(): SolutionContextSource | null {
+    if (this.solutionClearedForSession) {
+      return null;
+    }
+    return this.sessionSolution ? 'session' : this.projectSolution ? 'project' : null;
+  }
+
+  /** The project default from .dataverse-mcp, whether or not it is active in this session. */
+  getProjectSolutionContext(): SolutionContext | null {
+    return this.projectSolution;
   }
 
   getSolutionUniqueName(): string | null {
-    return this.solutionUniqueName;
+    return this.getSolutionContext()?.solutionUniqueName ?? null;
   }
 
+  /** Clears the solution context for the rest of this session. .dataverse-mcp is not touched. */
   clearSolutionContext(): void {
-    this.solutionUniqueName = null;
-    this.solutionContext = null;
-    this.saveSolutionContext();
+    this.sessionSolution = null;
+    this.solutionClearedForSession = true;
   }
 
   // Helper method to get headers with solution context
@@ -300,8 +370,9 @@ export class DataverseClient {
       'OData-Version': '4.0'
     };
 
-    if (this.solutionUniqueName) {
-      headers['MSCRM.SolutionUniqueName'] = this.solutionUniqueName;
+    const solutionUniqueName = this.getSolutionUniqueName();
+    if (solutionUniqueName) {
+      headers['MSCRM.SolutionUniqueName'] = solutionUniqueName;
     }
 
     return headers;
@@ -309,39 +380,27 @@ export class DataverseClient {
 
   // Helper method to get the customization prefix from the current solution context
   getCustomizationPrefix(): string | null {
-    if (!this.solutionContext) {
-      return null;
-    }
-    return this.solutionContext.customizationPrefix || null;
+    return this.getSolutionContext()?.customizationPrefix || null;
   }
 
   // Async method to refresh and get customization prefix (for backward compatibility)
   async getCustomizationPrefixAsync(): Promise<string> {
-    if (!this.solutionUniqueName) {
+    const context = this.getSolutionContext();
+    if (!context) {
       throw new Error('No solution context is set. Please set a solution context using set_solution_context tool to get the customization prefix.');
     }
-
-    // If we have cached prefix, return it
-    if (this.solutionContext?.customizationPrefix) {
-      return this.solutionContext.customizationPrefix;
+    if (context.customizationPrefix) {
+      return context.customizationPrefix;
     }
-
-    // Otherwise fetch it
     try {
-      const result = await this.get(
-        `solutions?$filter=uniquename eq '${this.solutionUniqueName}'&$expand=publisherid($select=customizationprefix)`
-      );
-
-      if (!result.value || result.value.length === 0) {
-        throw new Error(`Solution '${this.solutionUniqueName}' not found`);
+      const fetched = await this.fetchSolutionContext(context.solutionUniqueName);
+      if (!fetched) {
+        throw new Error(`Solution '${context.solutionUniqueName}' not found`);
       }
-
-      const prefix = result.value[0].publisherid?.customizationprefix;
-      if (!prefix) {
-        throw new Error(`No customization prefix found for solution '${this.solutionUniqueName}'`);
+      if (!fetched.customizationPrefix) {
+        throw new Error(`No customization prefix found for solution '${context.solutionUniqueName}'`);
       }
-
-      return prefix;
+      return fetched.customizationPrefix;
     } catch (error) {
       throw new Error(`Failed to get customization prefix: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }

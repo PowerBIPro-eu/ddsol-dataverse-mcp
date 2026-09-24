@@ -1,6 +1,6 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { DataverseClient } from "../dataverse-client.js";
+import { DataverseClient, SetSolutionContextOutcome } from "../dataverse-client.js";
 import { LocalizedLabel } from "../types.js";
 
 // Helper function to create localized labels
@@ -355,25 +355,34 @@ export function setSolutionContextTool(server: McpServer, client: DataverseClien
     "set_solution_context",
     {
       title: "Set Solution Context",
-      description: "Sets the active solution context for all subsequent metadata operations. When a solution context is set, all created tables, columns, relationships, and other components will be automatically added to this solution. This is required before creating any custom components.",
+      description: "Sets the solution that all subsequent metadata operations are associated with: created tables, columns, relationships and other components are added to it. Required before creating custom components. The project default lives in .dataverse-mcp in the working folder, a file meant to be committed; if it does not exist yet, this tool creates it. Choosing a solution other than the project default applies to the current session only, unless saveAsProjectDefault is true.",
       inputSchema: {
-        solutionUniqueName: z.string().describe("Unique name of the solution to set as context for subsequent operations")
+        solutionUniqueName: z.string().describe("Unique name of the solution to set as context for subsequent operations"),
+        saveAsProjectDefault: z.boolean().optional().describe("Also store this solution as the project default in .dataverse-mcp. Without it, the file is only written when it does not exist yet.")
       }
     },
     async (params) => {
       try {
-        await client.setSolutionContext(params.solutionUniqueName);
+        const previousProjectDefault = client.getProjectSolutionContext()?.solutionUniqueName;
+        const outcome = await client.setSolutionContext(params.solutionUniqueName, { saveAsProjectDefault: params.saveAsProjectDefault });
         const context = client.getSolutionContext();
 
         if (!context) {
           throw new Error('Failed to set solution context');
         }
 
+        const notes: Record<SetSolutionContextOutcome, string> = {
+          'project-created': 'Context has been persisted to .dataverse-mcp file. Commit it so that every clone and worktree of this project uses this solution.',
+          'project-updated': `Context has been persisted to .dataverse-mcp file as the new project default (previously '${previousProjectDefault}').`,
+          'project-default': 'This is the project default from .dataverse-mcp.',
+          'session-override': `This overrides the project default '${previousProjectDefault}' from .dataverse-mcp for the current session only; the file is unchanged. Pass saveAsProjectDefault: true to change the project default.`
+        };
+
         return {
           content: [
             {
               type: "text",
-              text: `Solution context set to '${context.solutionUniqueName}' (${context.solutionDisplayName}). All subsequent metadata operations will be associated with this solution.\n\nPublisher: ${context.publisherDisplayName} (${context.publisherUniqueName})\nPrefix: ${context.customizationPrefix}\n\nContext has been persisted to .dataverse-mcp file.`
+              text: `Solution context set to '${context.solutionUniqueName}' (${context.solutionDisplayName}). All subsequent metadata operations will be associated with this solution.\n\nPublisher: ${context.publisherDisplayName} (${context.publisherUniqueName})\nPrefix: ${context.customizationPrefix}\n\n${notes[outcome]}`
             }
           ]
         };
@@ -397,29 +406,44 @@ export function getSolutionContextTool(server: McpServer, client: DataverseClien
     "get_solution_context",
     {
       title: "Get Solution Context",
-      description: "Retrieves the currently active solution context information. Use this to check which solution is currently set for metadata operations and to verify the customization prefix being used for new components.",
+      description: "Retrieves the solution context of the current session: the project default from .dataverse-mcp or a session override. When an environment is selected, it also verifies that the solution exists there and that its publisher prefix matches .dataverse-mcp. Use this to confirm the solution and customization prefix before creating components.",
       inputSchema: {}
     },
     async () => {
       try {
-        const currentContext = client.getSolutionContext();
-        
-        if (!currentContext) {
+        const projectDefault = client.getProjectSolutionContext();
+        if (!client.getSolutionContext()) {
+          const cleared = projectDefault
+            ? ` It was cleared for this session; the project default in .dataverse-mcp ('${projectDefault.solutionUniqueName}') applies again in new sessions.`
+            : '';
           return {
             content: [
               {
                 type: "text",
-                text: "No solution context is currently set. Metadata operations will not be associated with any specific solution."
+                text: `No solution context is currently set. Metadata operations will not be associated with any specific solution.${cleared}`
               }
             ]
           };
         }
 
+        const currentContext = (await client.verifySolutionContext())!;
+        const publisher = currentContext.publisherUniqueName
+          ? `${currentContext.publisherDisplayName} (${currentContext.publisherUniqueName})`
+          : '(not loaded yet)';
+        const prefix = currentContext.customizationPrefix || '(unknown until an environment is selected)';
+        const source = client.getSolutionContextSource() === 'session'
+          ? `override for this session (project default: ${projectDefault ? `'${projectDefault.solutionUniqueName}'` : 'none'})`
+          : 'project default (.dataverse-mcp)';
+        const environment = client.getActiveEnvironment();
+        const verification = client.isSolutionContextVerified()
+          ? `Verified in ${environment}: the solution exists and its publisher prefix matches.`
+          : 'Not verified yet: no environment is selected for this session.';
+
         return {
           content: [
             {
               type: "text",
-              text: `Current solution context: '${currentContext.solutionUniqueName}' (${currentContext.solutionDisplayName})\n\nPublisher: ${currentContext.publisherDisplayName} (${currentContext.publisherUniqueName})\nPrefix: ${currentContext.customizationPrefix}\n\nAll metadata operations will be associated with this solution.\nLast updated: ${currentContext.lastUpdated}`
+              text: `Current solution context: '${currentContext.solutionUniqueName}' (${currentContext.solutionDisplayName || currentContext.solutionUniqueName})\n\nPublisher: ${publisher}\nPrefix: ${prefix}\n\nAll metadata operations will be associated with this solution.\nSource: ${source}\n${verification}`
             }
           ]
         };
@@ -443,20 +467,24 @@ export function clearSolutionContextTool(server: McpServer, client: DataverseCli
     "clear_solution_context",
     {
       title: "Clear Solution Context",
-      description: "Clears the currently active solution context. After clearing, metadata operations will not be associated with any specific solution. Use this when you want to work without a solution context or before switching to a different solution.",
+      description: "Clears the solution context for the current session. Metadata operations are then not associated with any specific solution until set_solution_context is called. .dataverse-mcp is not changed, so new sessions start with the project default again.",
       inputSchema: {}
     },
     async () => {
       try {
         const previousContext = client.getSolutionContext();
+        const projectDefault = client.getProjectSolutionContext();
         client.clearSolutionContext();
 
+        const projectNote = projectDefault
+          ? `\n\nThe project default in .dataverse-mcp ('${projectDefault.solutionUniqueName}') is unchanged and applies again in new sessions. Edit or delete the file to change it.`
+          : '';
         return {
           content: [
             {
               type: "text",
               text: previousContext
-                ? `Solution context cleared. Previously set to '${previousContext.solutionUniqueName}'. Metadata operations will no longer be associated with any specific solution.\n\n.dataverse-mcp file has been removed.`
+                ? `Solution context cleared for this session. Previously set to '${previousContext.solutionUniqueName}'. Metadata operations will no longer be associated with any specific solution.${projectNote}`
                 : "Solution context cleared (no context was previously set)."
             }
           ]
