@@ -1,5 +1,5 @@
 import { AuthHttpError, formatEntraFields, formatEntraFieldsInline, postForm } from './entra-http.js';
-import { CachedToken, PendingDeviceCode, TokenStore, defaultTokenCacheDir } from './token-store.js';
+import { CachedToken, PendingDeviceCode, TokenAccount, TokenStore, defaultTokenCacheDir } from './token-store.js';
 
 // Acquires and caches OAuth tokens for Dataverse environments and the Global
 // Discovery Service: cached token, then refresh token, then device-code sign-in.
@@ -121,6 +121,29 @@ function detailInline(error: unknown): string {
   return error instanceof AuthHttpError && error.entra ? formatEntraFieldsInline(error.entra) : errorMessage(error);
 }
 
+/**
+ * Decodes Entra's client_info (requested with client_info=1): base64url JSON holding the
+ * account's object ID (uid) and home tenant ID (utid). Identifiers only, no secrets.
+ */
+export function parseClientInfo(value: unknown): TokenAccount | undefined {
+  if (typeof value !== 'string' || !value) {
+    return undefined;
+  }
+  try {
+    const info = JSON.parse(Buffer.from(value, 'base64url').toString('utf8'));
+    if (typeof info?.uid === 'string' || typeof info?.utid === 'string') {
+      return { uid: info.uid, utid: info.utid };
+    }
+  } catch {
+    // Not decodable: treat the account as unknown.
+  }
+  return undefined;
+}
+
+function accountKey(account: TokenAccount | undefined): string | undefined {
+  return account?.uid ? `${account.uid}.${account.utid ?? ''}` : undefined;
+}
+
 function describeOutcome(outcome: string): string {
   switch (outcome) {
     case 'authorization_pending':
@@ -202,7 +225,7 @@ export class TokenManager {
 
     if (refreshable) {
       try {
-        const token = await this.redeemRefreshToken(refreshable.refresh_token!, scope);
+        const token = await this.redeemRefreshToken(refreshable.refresh_token!, scope, refreshable.account);
         this.storeToken(resource, token);
         this.log(`auth: refreshed the sign-in for ${resourceLabel(resource)}`);
         return token;
@@ -229,7 +252,63 @@ export class TokenManager {
       }
     }
 
+    const reused = await this.acquireFromOtherResources(resource, scope);
+    if (reused) {
+      return reused;
+    }
+
     return this.signInWithDeviceCode(resource, scope, notes);
+  }
+
+  /**
+   * Signs in to a resource silently with a refresh token cached for another resource.
+   * Entra refresh tokens are bound to the user and the client, not to a resource, so one
+   * device sign-in covers Global Discovery and every environment the user can reach.
+   * Tokens of more than one account are never mixed: then the user signs in explicitly.
+   */
+  private async acquireFromOtherResources(resource: string, scope: string): Promise<CachedToken | null> {
+    const candidates = this.store
+      .listTokens(this.options.tenantId, this.options.clientId)
+      .filter((file) => file.resource !== resource && file.token.refresh_token);
+    if (candidates.length === 0) {
+      return null;
+    }
+
+    const accounts = new Set(candidates.map((file) => accountKey(file.token.account)).filter((key) => key !== undefined));
+    if (accounts.size > 1) {
+      this.log(`auth: sign-ins of ${accounts.size} accounts are cached; not reusing one for ${resourceLabel(resource)}`);
+      return null;
+    }
+
+    const tried = new Set<string>();
+    for (const candidate of candidates) {
+      const refreshToken = candidate.token.refresh_token!;
+      if (tried.has(refreshToken) || tried.size >= 3) {
+        continue;
+      }
+      tried.add(refreshToken);
+      try {
+        const token = await this.redeemRefreshToken(refreshToken, scope, candidate.token.account);
+        this.storeToken(resource, token);
+        this.log(`auth: signed in to ${resourceLabel(resource)} with the cached sign-in of ${resourceLabel(candidate.resource)}`);
+        return token;
+      } catch (error) {
+        const outcome = classifyRefreshError(error);
+        if (outcome === 'transient') {
+          this.log(`auth: silent sign-in to ${resourceLabel(resource)} failed temporarily: ${detailInline(error)}`);
+          throw new AuthUnavailableError(`Could not sign in to ${resourceLabel(resource)}: ${errorMessage(error)}`);
+        }
+        if (outcome === 'configuration') {
+          throw new SignInFailedError(
+            `Sign-in failed: Microsoft Entra rejected the app configuration.\n${detailLines(error)}\n` +
+            'Check DATAVERSE_CLIENT_ID and DATAVERSE_TENANT_ID, and that the app registration allows public client flows.'
+          );
+        }
+        // For example consent or Conditional Access for this resource: try the next one.
+        this.log(`auth: cached sign-in of ${resourceLabel(candidate.resource)} does not work for ${resourceLabel(resource)}: ${detailInline(error)}`);
+      }
+    }
+    return null;
   }
 
   // Expired tokens fail this check but can still hold a usable refresh token.
@@ -262,29 +341,32 @@ export class TokenManager {
     this.store.remove(this.tokenPath(resource));
   }
 
-  private toCachedToken(data: any, previousRefreshToken?: string): CachedToken {
+  private toCachedToken(data: any, previousRefreshToken?: string, previousAccount?: TokenAccount): CachedToken {
     if (!data || typeof data.access_token !== 'string') {
       throw new Error('Microsoft Entra returned a response without an access token.');
     }
     const expiresIn = Number(data.expires_in) || 3600;
+    const account = parseClientInfo(data.client_info) ?? previousAccount;
     return {
       access_token: data.access_token,
       token_type: data.token_type,
       expires_in: expiresIn,
       expires_at: this.now() + expiresIn * 1000 - 60_000,
       refresh_token: data.refresh_token ?? previousRefreshToken,
-      scope: data.scope
+      scope: data.scope,
+      ...(account ? { account } : {})
     };
   }
 
-  private async redeemRefreshToken(refreshToken: string, scope: string): Promise<CachedToken> {
+  private async redeemRefreshToken(refreshToken: string, scope: string, account?: TokenAccount): Promise<CachedToken> {
     const data = await this.http.postForm(this.tokenEndpointUrl, {
       grant_type: 'refresh_token',
       client_id: this.options.clientId,
       refresh_token: refreshToken,
-      scope
+      scope,
+      client_info: '1'
     }, this.tokenEndpointLabel);
-    return this.toCachedToken(data, refreshToken);
+    return this.toCachedToken(data, refreshToken, account);
   }
 
   private async acquireWithClientSecret(resource: string): Promise<CachedToken> {
@@ -393,7 +475,8 @@ export class TokenManager {
         const data = await this.http.postForm(this.tokenEndpointUrl, {
           grant_type: DEVICE_CODE_GRANT,
           client_id: this.options.clientId,
-          device_code: pending.device_code
+          device_code: pending.device_code,
+          client_info: '1'
         }, this.tokenEndpointLabel);
         const token = this.toCachedToken(data);
         this.storeToken(resource, token);

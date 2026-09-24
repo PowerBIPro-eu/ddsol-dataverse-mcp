@@ -15,6 +15,20 @@ export interface CachedToken {
   expires_at: number;
   refresh_token?: string;
   scope?: string;
+  /** Account identifiers from Entra's client_info (object ID and tenant ID); no secrets. */
+  account?: TokenAccount;
+}
+
+export interface TokenAccount {
+  uid?: string;
+  utid?: string;
+}
+
+/** A cached token file together with the resource it belongs to. */
+export interface StoredTokenFile {
+  filePath: string;
+  resource: string;
+  token: CachedToken;
 }
 
 /** A device-code sign-in in progress (dataverse-mcp-pending-*.json). */
@@ -70,6 +84,41 @@ export class TokenStore {
 
   writeToken(filePath: string, token: CachedToken): void {
     writeJsonAtomic(filePath, token);
+  }
+
+  /**
+   * Lists every cached token of one tenant and client, newest first. The hex encoding
+   * of the file names preserves prefixes, so they all start with hex("tenant:client:").
+   */
+  listTokens(tenantId: string, clientId: string): StoredTokenFile[] {
+    const prefix = `dataverse-mcp-auth-${tokenCacheKey(tenantId, clientId, '')}`;
+    let names: string[];
+    try {
+      names = fs.readdirSync(this.dir).filter((name) => name.startsWith(prefix) && name.endsWith('.json'));
+    } catch {
+      return [];
+    }
+    const files: (StoredTokenFile & { modified: number })[] = [];
+    for (const name of names) {
+      const filePath = path.join(this.dir, name);
+      const token = this.readToken(filePath);
+      if (!token) {
+        continue;
+      }
+      const key = name.slice('dataverse-mcp-auth-'.length, -'.json'.length);
+      const decoded = Buffer.from(key, 'hex').toString('utf8');
+      const resource = decoded.slice(`${tenantId}:${clientId}:`.length);
+      let modified = 0;
+      try {
+        modified = fs.statSync(filePath).mtimeMs;
+      } catch {
+        // Keep the file; it just sorts last.
+      }
+      files.push({ filePath, resource, token, modified });
+    }
+    return files
+      .sort((a, b) => b.modified - a.modified)
+      .map(({ filePath, resource, token }) => ({ filePath, resource, token }));
   }
 
   readPending(filePath: string): PendingDeviceCode | null {
