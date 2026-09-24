@@ -545,7 +545,7 @@ export class DataverseClient {
         this.solutionUniqueName = this.solutionContext?.solutionUniqueName || null;
         
         if (this.solutionContext) {
-          console.log(`Loaded solution context: ${this.solutionContext.solutionUniqueName} (${this.solutionContext.solutionDisplayName || 'Unknown'})`);
+          console.error(`Loaded solution context: ${this.solutionContext.solutionUniqueName} (${this.solutionContext.solutionDisplayName || 'Unknown'})`);
         }
       }
     } catch (error) {
