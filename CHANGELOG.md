@@ -11,6 +11,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `create_dataverse_record` creates one business-data record in an explicit Dataverse entity set. It supports structured record payloads, `@odata.bind` lookup bindings, and requires `confirmCreate: true` before writing data.
 - `create_dataverse_records`, `update_dataverse_records`, and `delete_dataverse_records` support confirmed bulk business-data mutations of up to 25 records per call. Creates return record representations, updates re-fetch records for verification, and delete responses confirm completed deletes.
 - `set_dataverse_view_powerapps_grid_control` adds or reconfigures the Power Apps grid control on a specific system view by editing its LayoutXML `controlDescriptions`, exposing the full documented parameter set (editing, filtering, sorting, grouping, aggregation, selection, pagination, list-view options, lookup behavior, customizer control, and form factors).
+- `update_dataverse_relationship` updates an existing relationship's cascade behaviors (including RollupView), associated menu configuration, and Advanced Find/hierarchical flags, preserving every unsupplied field from the current relationship.
+- `create_dataverse_relationship` now configures the RollupView cascade behavior and supports separate associated menu configuration per entity for Many-to-Many relationships.
 
 ### Removed
 - Removed the experimental model-driven app tools. Model-driven app creation, component management, sitemap editing, and app validation are no longer exposed by this MCP package.

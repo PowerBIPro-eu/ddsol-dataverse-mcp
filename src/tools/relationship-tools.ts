@@ -52,13 +52,24 @@ export function createRelationshipTool(server: McpServer, client: DataverseClien
         cascadeReparent: z.enum(["NoCascade", "Cascade", "Active", "UserOwned", "RemoveLink", "Restrict"]).default("NoCascade").describe("Cascade behavior for reparent operations"),
         cascadeShare: z.enum(["NoCascade", "Cascade", "Active", "UserOwned", "RemoveLink", "Restrict"]).default("NoCascade").describe("Cascade behavior for share operations"),
         cascadeUnshare: z.enum(["NoCascade", "Cascade", "Active", "UserOwned", "RemoveLink", "Restrict"]).default("NoCascade").describe("Cascade behavior for unshare operations"),
+        cascadeRollupView: z.enum(["NoCascade", "Cascade", "Active", "UserOwned", "RemoveLink", "Restrict"]).default("NoCascade").describe("Cascade behavior for the Activity Associated View rollup"),
         
         // Associated menu configuration
-        menuBehavior: z.enum(["UseCollectionName", "UseLabel", "DoNotDisplay"]).default("UseCollectionName").describe("How the relationship appears in associated menus"),
+        menuBehavior: z.enum(["UseCollectionName", "UseLabel", "DoNotDisplay"]).default("UseCollectionName").describe("How the relationship appears in associated menus. For Many-to-Many, used as the default for both entities unless entity1MenuBehavior/entity2MenuBehavior are supplied."),
         menuGroup: z.enum(["Details", "Sales", "Service", "Marketing"]).default("Details").describe("Menu group for the relationship"),
         menuLabel: z.string().optional().describe("Custom label for the menu (required if menuBehavior is UseLabel)"),
         menuOrder: z.number().optional().describe("Order in the menu"),
-        
+
+        // Many-to-Many per-entity menu configuration overrides
+        entity1MenuBehavior: z.enum(["UseCollectionName", "UseLabel", "DoNotDisplay"]).optional().describe("Overrides menuBehavior for entity1's associated menu (Many-to-Many only)"),
+        entity1MenuGroup: z.enum(["Details", "Sales", "Service", "Marketing"]).optional().describe("Overrides menuGroup for entity1's associated menu (Many-to-Many only)"),
+        entity1MenuLabel: z.string().optional().describe("Overrides menuLabel for entity1's associated menu (Many-to-Many only)"),
+        entity1MenuOrder: z.number().optional().describe("Overrides menuOrder for entity1's associated menu (Many-to-Many only)"),
+        entity2MenuBehavior: z.enum(["UseCollectionName", "UseLabel", "DoNotDisplay"]).optional().describe("Overrides menuBehavior for entity2's associated menu (Many-to-Many only)"),
+        entity2MenuGroup: z.enum(["Details", "Sales", "Service", "Marketing"]).optional().describe("Overrides menuGroup for entity2's associated menu (Many-to-Many only)"),
+        entity2MenuLabel: z.string().optional().describe("Overrides menuLabel for entity2's associated menu (Many-to-Many only)"),
+        entity2MenuOrder: z.number().optional().describe("Overrides menuOrder for entity2's associated menu (Many-to-Many only)"),
+
         isValidForAdvancedFind: z.boolean().default(true).describe("Whether the relationship is valid for Advanced Find"),
         isHierarchical: z.boolean().default(false).describe("Whether this is a hierarchical relationship (One-to-Many only)")
       }
@@ -77,7 +88,7 @@ export function createRelationshipTool(server: McpServer, client: DataverseClien
             Reparent: getCascadeValue(params.cascadeReparent),
             Share: getCascadeValue(params.cascadeShare),
             Unshare: getCascadeValue(params.cascadeUnshare),
-            RollupView: "NoCascade"
+            RollupView: getCascadeValue(params.cascadeRollupView)
           };
 
           const menuConfig = {
@@ -129,17 +140,17 @@ export function createRelationshipTool(server: McpServer, client: DataverseClien
           }
 
           const menuConfig1 = {
-            Behavior: getMenuBehaviorValue(params.menuBehavior),
-            Group: getMenuGroupValue(params.menuGroup),
-            Label: params.menuLabel ? createLocalizedLabel(params.menuLabel) : undefined,
-            Order: params.menuOrder
+            Behavior: getMenuBehaviorValue(params.entity1MenuBehavior ?? params.menuBehavior),
+            Group: getMenuGroupValue(params.entity1MenuGroup ?? params.menuGroup),
+            Label: (params.entity1MenuLabel ?? params.menuLabel) ? createLocalizedLabel((params.entity1MenuLabel ?? params.menuLabel)!) : undefined,
+            Order: params.entity1MenuOrder ?? params.menuOrder
           };
 
           const menuConfig2 = {
-            Behavior: getMenuBehaviorValue(params.menuBehavior),
-            Group: getMenuGroupValue(params.menuGroup),
-            Label: params.menuLabel ? createLocalizedLabel(params.menuLabel) : undefined,
-            Order: params.menuOrder
+            Behavior: getMenuBehaviorValue(params.entity2MenuBehavior ?? params.menuBehavior),
+            Group: getMenuGroupValue(params.entity2MenuGroup ?? params.menuGroup),
+            Label: (params.entity2MenuLabel ?? params.menuLabel) ? createLocalizedLabel((params.entity2MenuLabel ?? params.menuLabel)!) : undefined,
+            Order: params.entity2MenuOrder ?? params.menuOrder
           };
 
           const relationshipDefinition = {
@@ -171,6 +182,151 @@ export function createRelationshipTool(server: McpServer, client: DataverseClien
             {
               type: "text",
               text: `Error creating relationship: ${error instanceof Error ? error.message : 'Unknown error'}`
+            }
+          ],
+          isError: true
+        };
+      }
+    }
+  );
+}
+
+const cascadeEnum = z.enum(["NoCascade", "Cascade", "Active", "UserOwned", "RemoveLink", "Restrict"]);
+const menuBehaviorEnum = z.enum(["UseCollectionName", "UseLabel", "DoNotDisplay"]);
+const menuGroupEnum = z.enum(["Details", "Sales", "Service", "Marketing"]);
+
+export function updateRelationshipTool(server: McpServer, client: DataverseClient) {
+  server.registerTool(
+    "update_dataverse_relationship",
+    {
+      title: "Update Dataverse Relationship",
+      description: "Updates an existing Dataverse relationship's cascade behaviors, associated menu configuration, and Advanced Find/hierarchical flags. Only supplied fields are changed; every other setting is read from the current relationship and preserved unchanged.",
+      inputSchema: {
+        relationshipType: z.enum(["OneToMany", "ManyToMany"]).describe("Type of the existing relationship being updated"),
+        schemaName: z.string().describe("Schema name of the relationship to update"),
+
+        // One-to-Many cascade configuration (optional; unset fields keep their current value)
+        cascadeAssign: cascadeEnum.optional().describe("Cascade behavior for assign operations (One-to-Many only)"),
+        cascadeDelete: cascadeEnum.optional().describe("Cascade behavior for delete operations (One-to-Many only)"),
+        cascadeMerge: cascadeEnum.optional().describe("Cascade behavior for merge operations (One-to-Many only)"),
+        cascadeReparent: cascadeEnum.optional().describe("Cascade behavior for reparent operations (One-to-Many only)"),
+        cascadeShare: cascadeEnum.optional().describe("Cascade behavior for share operations (One-to-Many only)"),
+        cascadeUnshare: cascadeEnum.optional().describe("Cascade behavior for unshare operations (One-to-Many only)"),
+        cascadeRollupView: cascadeEnum.optional().describe("Cascade behavior for the Activity Associated View rollup (One-to-Many only)"),
+        isHierarchical: z.boolean().optional().describe("Whether this is the hierarchical self-referential relationship (One-to-Many only)"),
+
+        // One-to-Many associated menu configuration (optional)
+        menuBehavior: menuBehaviorEnum.optional().describe("How the relationship appears in associated menus (One-to-Many only)"),
+        menuGroup: menuGroupEnum.optional().describe("Menu group for the relationship (One-to-Many only)"),
+        menuLabel: z.string().optional().describe("Custom label for the menu, required if menuBehavior is UseLabel (One-to-Many only)"),
+        menuOrder: z.number().optional().describe("Order in the menu (One-to-Many only)"),
+
+        // Many-to-Many per-entity associated menu configuration (optional)
+        entity1MenuBehavior: menuBehaviorEnum.optional().describe("How the relationship appears in entity1's associated menu (Many-to-Many only)"),
+        entity1MenuGroup: menuGroupEnum.optional().describe("Menu group for entity1's associated menu (Many-to-Many only)"),
+        entity1MenuLabel: z.string().optional().describe("Custom label for entity1's associated menu (Many-to-Many only)"),
+        entity1MenuOrder: z.number().optional().describe("Order in entity1's associated menu (Many-to-Many only)"),
+        entity2MenuBehavior: menuBehaviorEnum.optional().describe("How the relationship appears in entity2's associated menu (Many-to-Many only)"),
+        entity2MenuGroup: menuGroupEnum.optional().describe("Menu group for entity2's associated menu (Many-to-Many only)"),
+        entity2MenuLabel: z.string().optional().describe("Custom label for entity2's associated menu (Many-to-Many only)"),
+        entity2MenuOrder: z.number().optional().describe("Order in entity2's associated menu (Many-to-Many only)"),
+
+        isValidForAdvancedFind: z.boolean().optional().describe("Whether the relationship is valid for Advanced Find")
+      }
+    },
+    async (params) => {
+      try {
+        if (params.relationshipType === "OneToMany") {
+          const current = await client.getMetadata<any>(
+            `RelationshipDefinitions(SchemaName='${params.schemaName}')/Microsoft.Dynamics.CRM.OneToManyRelationshipMetadata`,
+            { $select: "SchemaName,CascadeConfiguration,AssociatedMenuConfiguration,IsValidForAdvancedFind,IsHierarchical" }
+          );
+
+          const currentCascade = current.CascadeConfiguration || {};
+          const currentMenu = current.AssociatedMenuConfiguration || {};
+
+          const cascadeConfig = {
+            Assign: params.cascadeAssign !== undefined ? getCascadeValue(params.cascadeAssign) : currentCascade.Assign,
+            Delete: params.cascadeDelete !== undefined ? getCascadeValue(params.cascadeDelete) : currentCascade.Delete,
+            Merge: params.cascadeMerge !== undefined ? getCascadeValue(params.cascadeMerge) : currentCascade.Merge,
+            Reparent: params.cascadeReparent !== undefined ? getCascadeValue(params.cascadeReparent) : currentCascade.Reparent,
+            Share: params.cascadeShare !== undefined ? getCascadeValue(params.cascadeShare) : currentCascade.Share,
+            Unshare: params.cascadeUnshare !== undefined ? getCascadeValue(params.cascadeUnshare) : currentCascade.Unshare,
+            RollupView: params.cascadeRollupView !== undefined ? getCascadeValue(params.cascadeRollupView) : currentCascade.RollupView
+          };
+
+          const menuConfig = {
+            Behavior: params.menuBehavior !== undefined ? getMenuBehaviorValue(params.menuBehavior) : currentMenu.Behavior,
+            Group: params.menuGroup !== undefined ? getMenuGroupValue(params.menuGroup) : currentMenu.Group,
+            Label: params.menuLabel !== undefined ? createLocalizedLabel(params.menuLabel) : currentMenu.Label,
+            Order: params.menuOrder !== undefined ? params.menuOrder : currentMenu.Order
+          };
+
+          const updatePayload = {
+            "@odata.type": "Microsoft.Dynamics.CRM.OneToManyRelationshipMetadata",
+            CascadeConfiguration: cascadeConfig,
+            AssociatedMenuConfiguration: menuConfig,
+            IsValidForAdvancedFind: params.isValidForAdvancedFind !== undefined ? params.isValidForAdvancedFind : current.IsValidForAdvancedFind,
+            IsHierarchical: params.isHierarchical !== undefined ? params.isHierarchical : current.IsHierarchical
+          };
+
+          await client.patchMetadata(`RelationshipDefinitions(SchemaName='${params.schemaName}')`, updatePayload);
+
+          return {
+            content: [
+              {
+                type: "text",
+                text: `Successfully updated One-to-Many relationship '${params.schemaName}'.\n\nApplied cascade configuration: ${JSON.stringify(cascadeConfig, null, 2)}\n\nApplied menu configuration: ${JSON.stringify(menuConfig, null, 2)}`
+              }
+            ]
+          };
+        } else { // ManyToMany
+          const current = await client.getMetadata<any>(
+            `RelationshipDefinitions(SchemaName='${params.schemaName}')/Microsoft.Dynamics.CRM.ManyToManyRelationshipMetadata`,
+            { $select: "SchemaName,Entity1AssociatedMenuConfiguration,Entity2AssociatedMenuConfiguration,IsValidForAdvancedFind" }
+          );
+
+          const currentMenu1 = current.Entity1AssociatedMenuConfiguration || {};
+          const currentMenu2 = current.Entity2AssociatedMenuConfiguration || {};
+
+          const menuConfig1 = {
+            Behavior: params.entity1MenuBehavior !== undefined ? getMenuBehaviorValue(params.entity1MenuBehavior) : currentMenu1.Behavior,
+            Group: params.entity1MenuGroup !== undefined ? getMenuGroupValue(params.entity1MenuGroup) : currentMenu1.Group,
+            Label: params.entity1MenuLabel !== undefined ? createLocalizedLabel(params.entity1MenuLabel) : currentMenu1.Label,
+            Order: params.entity1MenuOrder !== undefined ? params.entity1MenuOrder : currentMenu1.Order
+          };
+
+          const menuConfig2 = {
+            Behavior: params.entity2MenuBehavior !== undefined ? getMenuBehaviorValue(params.entity2MenuBehavior) : currentMenu2.Behavior,
+            Group: params.entity2MenuGroup !== undefined ? getMenuGroupValue(params.entity2MenuGroup) : currentMenu2.Group,
+            Label: params.entity2MenuLabel !== undefined ? createLocalizedLabel(params.entity2MenuLabel) : currentMenu2.Label,
+            Order: params.entity2MenuOrder !== undefined ? params.entity2MenuOrder : currentMenu2.Order
+          };
+
+          const updatePayload = {
+            "@odata.type": "Microsoft.Dynamics.CRM.ManyToManyRelationshipMetadata",
+            Entity1AssociatedMenuConfiguration: menuConfig1,
+            Entity2AssociatedMenuConfiguration: menuConfig2,
+            IsValidForAdvancedFind: params.isValidForAdvancedFind !== undefined ? params.isValidForAdvancedFind : current.IsValidForAdvancedFind
+          };
+
+          await client.patchMetadata(`RelationshipDefinitions(SchemaName='${params.schemaName}')`, updatePayload);
+
+          return {
+            content: [
+              {
+                type: "text",
+                text: `Successfully updated Many-to-Many relationship '${params.schemaName}'.\n\nApplied entity1 menu configuration: ${JSON.stringify(menuConfig1, null, 2)}\n\nApplied entity2 menu configuration: ${JSON.stringify(menuConfig2, null, 2)}`
+              }
+            ]
+          };
+        }
+      } catch (error) {
+        return {
+          content: [
+            {
+              type: "text",
+              text: `Error updating relationship: ${error instanceof Error ? error.message : 'Unknown error'}`
             }
           ],
           isError: true

@@ -20,6 +20,7 @@ import {
 import {
   createRelationshipTool,
   getRelationshipTool,
+  updateRelationshipTool,
   deleteRelationshipTool,
   listRelationshipsTool
 } from "./tools/relationship-tools.js";
@@ -217,6 +218,7 @@ listColumnsTool(server, dataverseClient);
 // Register relationship tools
 createRelationshipTool(server, dataverseClient);
 getRelationshipTool(server, dataverseClient);
+updateRelationshipTool(server, dataverseClient);
 deleteRelationshipTool(server, dataverseClient);
 listRelationshipsTool(server, dataverseClient);
 
