@@ -460,6 +460,18 @@ export class DataverseClient {
     return (await this.sendSolutionAware<T>('post', endpoint, { data })).data;
   }
 
+  /** Like postMetadata, but also returns the status and response headers (e.g. OData-EntityId). */
+  async postMetadataWithResponse<T = any>(endpoint: string, data?: any): Promise<{ data: T; status: number; headers: Record<string, string> }> {
+    const response = await this.sendSolutionAware<T>('post', endpoint, { data });
+    const headers: Record<string, string> = {};
+    for (const [name, value] of Object.entries(response.headers ?? {})) {
+      if (value !== undefined && value !== null) {
+        headers[name.toLowerCase()] = String(value);
+      }
+    }
+    return { data: response.data, status: response.status, headers };
+  }
+
   async patchMetadata<T = any>(endpoint: string, data?: any): Promise<T> {
     return (await this.sendSolutionAware<T>('patch', endpoint, { data })).data;
   }

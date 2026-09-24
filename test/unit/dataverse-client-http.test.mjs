@@ -28,6 +28,10 @@ before(async () => {
       if (req.method === 'GET' && req.url.startsWith('/api/data/v9.2/ok')) return send(res, 200, { value: [] });
       if (req.method === 'GET' && req.url.startsWith('/api/data/v9.2/unauthorized')) return send(res, 401, undefined, { 'x-ms-service-request-id': 'req-401' });
       if (req.method === 'POST' && req.url === '/api/data/v9.2/accounts') return send(res, 201, { accountid: '1' });
+      if (req.method === 'POST' && req.url.endsWith('/Keys')) {
+        res.writeHead(204, { 'OData-EntityId': `${baseUrl}/api/data/v9.2/EntityDefinitions(aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee)/Keys(11111111-2222-3333-4444-555555555555)` });
+        return res.end();
+      }
       if (req.method === 'PATCH') {
         return send(res, 500, {
           error: {
@@ -108,6 +112,12 @@ test('a pasted Web API URL selects the same environment and token cache entry', 
   const get = requests.findLast((request) => request.method === 'GET');
   assert.equal(get.url, '/api/data/v9.2/ok');
   assert.equal(get.headers.authorization, 'Bearer test-access-token');
+});
+
+test('postMetadataWithResponse exposes the OData-EntityId header', async () => {
+  const response = await client.postMetadataWithResponse("EntityDefinitions(LogicalName='cnt_resource')/Keys", { SchemaName: 'k' });
+  assert.equal(response.status, 204);
+  assert.match(response.headers['odata-entityid'], /\/Keys\(11111111-2222-3333-4444-555555555555\)$/);
 });
 
 test('an error without a Dataverse body carries no request data', async () => {

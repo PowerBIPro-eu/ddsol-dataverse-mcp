@@ -1,6 +1,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { DataverseClient } from "../dataverse-client.js";
+import { STRONG_CONSISTENCY } from "./metadata-readback.js";
 
 interface EntityKeyMetadata {
   MetadataId: string;
@@ -57,6 +58,54 @@ function keysEndpoint(entityLogicalName: string): string {
   return `EntityDefinitions(LogicalName='${entityLogicalName}')/Keys`;
 }
 
+const KEY_SELECT = "MetadataId,SchemaName,LogicalName,DisplayName,KeyAttributes,EntityKeyIndexStatus,AsyncJob,IsManaged,IsCustomizable";
+
+/** How often a freshly created key is looked up before reporting it as not visible yet. */
+export const createdKeyLookup = { attempts: 5, delayMs: 3000 };
+
+/** Extracts the key's MetadataId from an OData-EntityId header such as .../EntityDefinitions(<id>)/Keys(<id>). */
+export function keyIdFromEntityIdHeader(header: string | undefined): string | undefined {
+  return header ? /Keys\(([0-9a-fA-F-]{36})\)/.exec(header)?.[1] : undefined;
+}
+
+function isNotFound(error: unknown): boolean {
+  const err = error as { status?: number; code?: string; message?: string };
+  return err?.status === 404 || err?.code === "0x80040217" || err?.code === "0x80060888" || /0x80040217|0x80060888/.test(err?.message ?? "");
+}
+
+/**
+ * Looks up a key that was just created. The create request has already succeeded, so
+ * the key exists; metadata can take a moment to show it. Reads use Consistency: Strong,
+ * and only "not found" is retried.
+ */
+async function findCreatedKey(
+  client: DataverseClient,
+  entityLogicalName: string,
+  schemaName: string,
+  keyId: string | undefined
+): Promise<{ key?: EntityKeyMetadata; error?: string }> {
+  for (let attempt = 1; attempt <= createdKeyLookup.attempts; attempt++) {
+    try {
+      if (keyId) {
+        return { key: await client.getMetadata<EntityKeyMetadata>(`${keysEndpoint(entityLogicalName)}(${keyId})`, { $select: KEY_SELECT }, STRONG_CONSISTENCY) };
+      }
+      const response = await client.getMetadata<MetadataCollection<EntityKeyMetadata>>(keysEndpoint(entityLogicalName), { $select: KEY_SELECT }, STRONG_CONSISTENCY);
+      const key = response.value.find((item) => item.SchemaName === schemaName);
+      if (key) {
+        return { key };
+      }
+    } catch (error) {
+      if (!isNotFound(error)) {
+        return { error: error instanceof Error ? error.message.split("\n")[0] : String(error) };
+      }
+    }
+    if (attempt < createdKeyLookup.attempts) {
+      await new Promise((resolve) => setTimeout(resolve, createdKeyLookup.delayMs));
+    }
+  }
+  return {};
+}
+
 async function getKeyBySchemaName(
   client: DataverseClient,
   entityLogicalName: string,
@@ -110,14 +159,28 @@ export function createAlternateKeyTool(server: McpServer, client: DataverseClien
           })
         };
 
-        await client.postMetadata(keysEndpoint(params.entityLogicalName), metadata);
-        const key = await getKeyBySchemaName(client, params.entityLogicalName, params.schemaName);
+        const response = await client.postMetadataWithResponse(keysEndpoint(params.entityLogicalName), metadata);
+        const keyId = keyIdFromEntityIdHeader(response.headers["odata-entityid"]);
+        const { key, error } = await findCreatedKey(client, params.entityLogicalName, params.schemaName, keyId);
 
+        if (key) {
+          return {
+            content: [
+              {
+                type: "text",
+                text: `Successfully created alternate key '${params.schemaName}' on table '${params.entityLogicalName}'. Index status: ${getIndexStatusName(key.EntityKeyIndexStatus)}.\n\n${JSON.stringify(toKeySummary(key), null, 2)}\n\nThe unique index is created asynchronously. Wait until indexStatus is 'Active' before relying on this key for upsert or key-based record references.`
+              }
+            ]
+          };
+        }
+
+        // The create request succeeded, so the key exists even though metadata does not
+        // show it yet. Reporting a failure here would invite creating it a second time.
         return {
           content: [
             {
               type: "text",
-              text: `Successfully created alternate key '${params.schemaName}' on table '${params.entityLogicalName}'.\n\n${JSON.stringify(toKeySummary(key), null, 2)}\n\nThe unique index is created asynchronously. Wait until indexStatus is 'Active' before relying on this key for upsert or key-based record references.`
+              text: `Successfully created alternate key '${params.schemaName}' on table '${params.entityLogicalName}'${keyId ? ` (keyId: ${keyId})` : ''}, but it is not visible in the table metadata yet${error ? ` (lookup failed: ${error})` : ''}.\n\nDo not create it again. Dataverse builds the unique index asynchronously; check the key with get_dataverse_alternate_key or list_dataverse_alternate_keys and wait until indexStatus is 'Active' before relying on it.`
             }
           ]
         };
