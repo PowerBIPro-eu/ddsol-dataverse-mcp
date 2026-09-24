@@ -1,6 +1,36 @@
 // A scripted stand-in for Microsoft Entra ID and a controllable clock, for testing
 // the token manager without network access.
+import { mkdtempSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { AuthHttpError } from '../../../build/auth/entra-http.js';
+import { TokenManager } from '../../../build/auth/token-manager.js';
+
+export const TEST_TENANT = 'organizations';
+
+/** A TokenManager wired to a fake Entra, a fake clock and a temporary cache directory. */
+export function setupTokenManager({
+  onToken,
+  clientId = 'client-a',
+  dir = mkdtempSync(join(tmpdir(), 'dvmcp-cache-')),
+  clock = fakeClock()
+} = {}) {
+  const entra = fakeEntra({ onToken });
+  const logs = [];
+  const opened = [];
+  const manager = new TokenManager({
+    tenantId: TEST_TENANT,
+    clientId,
+    authMode: 'device',
+    cacheDir: dir,
+    http: entra.http,
+    now: clock.now,
+    sleep: clock.sleep,
+    log: (line) => logs.push(line),
+    onNewDeviceCode: (uri, code) => opened.push({ uri, code })
+  });
+  return { dir, clock, entra, logs, opened, manager };
+}
 
 export function entraError(error, { status = 400, codes = [], description } = {}) {
   return new AuthHttpError(`Test token endpoint returned ${error} (HTTP ${status}).`, 'Test token endpoint', {

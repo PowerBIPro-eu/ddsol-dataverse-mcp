@@ -237,34 +237,29 @@ export class TokenManager {
     return !!token && typeof token.access_token === 'string' && this.now() < token.expires_at;
   }
 
-  private shouldPersist(resource: string): boolean {
-    return resource !== GLOBAL_DISCOVERY_RESOURCE;
-  }
-
+  // The Global Discovery token is cached exactly like environment tokens, under
+  // hex(tenant:clientId:https://globaldisco.crm.dynamics.com), so a new server process
+  // can list environments without a new sign-in.
   private tokenPath(resource: string): string {
     return this.store.tokenPath(this.options.tenantId, this.options.clientId, resource);
   }
 
   private readStoredToken(resource: string): CachedToken | null {
-    return this.shouldPersist(resource) ? this.store.readToken(this.tokenPath(resource)) : null;
+    return this.store.readToken(this.tokenPath(resource));
   }
 
   private storeToken(resource: string, token: CachedToken): void {
     this.memory.set(resource, token);
-    if (this.shouldPersist(resource)) {
-      try {
-        this.store.writeToken(this.tokenPath(resource), token);
-      } catch (error: any) {
-        this.log(`auth: could not save the token cache for ${resourceLabel(resource)} (${error?.code ?? 'unknown error'})`);
-      }
+    try {
+      this.store.writeToken(this.tokenPath(resource), token);
+    } catch (error: any) {
+      this.log(`auth: could not save the token cache for ${resourceLabel(resource)} (${error?.code ?? 'unknown error'})`);
     }
   }
 
   private forgetToken(resource: string): void {
     this.memory.delete(resource);
-    if (this.shouldPersist(resource)) {
-      this.store.remove(this.tokenPath(resource));
-    }
+    this.store.remove(this.tokenPath(resource));
   }
 
   private toCachedToken(data: any, previousRefreshToken?: string): CachedToken {

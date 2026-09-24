@@ -6,34 +6,20 @@ import {
   AuthUnavailableError,
   SignInFailedError,
   SignInRequiredError,
-  TokenManager,
   classifyPollError
 } from '../../build/auth/token-manager.js';
 import { TokenStore } from '../../build/auth/token-store.js';
-import { entraError, fakeClock, fakeEntra, networkError, tokenResponse } from './helpers/fake-entra.mjs';
+import {
+  TEST_TENANT as TENANT,
+  entraError,
+  networkError,
+  setupTokenManager as setup,
+  tokenResponse
+} from './helpers/fake-entra.mjs';
 import { makeTempDir } from './helpers/mcp-process.mjs';
 
-const TENANT = 'organizations';
 const ENV = 'https://contoso.api.crm4.dynamics.com';
 const DEVICE_GRANT = 'urn:ietf:params:oauth:grant-type:device_code';
-
-function setup({ onToken, clientId = 'client-a', dir = makeTempDir(), clock = fakeClock() } = {}) {
-  const entra = fakeEntra({ onToken });
-  const logs = [];
-  const opened = [];
-  const manager = new TokenManager({
-    tenantId: TENANT,
-    clientId,
-    authMode: 'device',
-    cacheDir: dir,
-    http: entra.http,
-    now: clock.now,
-    sleep: clock.sleep,
-    log: (line) => logs.push(line),
-    onNewDeviceCode: (uri, code) => opened.push({ uri, code })
-  });
-  return { dir, clock, entra, logs, opened, manager };
-}
 
 function pendingFiles(dir) {
   return readdirSync(dir).filter((name) => name.startsWith('dataverse-mcp-pending-'));
