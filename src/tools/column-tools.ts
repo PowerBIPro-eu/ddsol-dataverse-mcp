@@ -2,6 +2,41 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { DataverseClient } from "../dataverse-client.js";
 import { AttributeMetadata, ODataResponse, LocalizedLabel } from "../types.js";
+import { compareStored, readBack } from "./metadata-readback.js";
+
+// Values of StringFormatName for single-line text columns. Each also exists in the older
+// StringFormat enum, so Format and FormatName can always be set to the same value.
+const STRING_FORMATS = ["Email", "Text", "TextArea", "Url", "TickerSymbol", "Phone", "Json"] as const;
+const INTEGER_FORMATS = ["None", "Duration", "TimeZone", "Language", "Locale"] as const;
+
+function applyStringFormat(definition: any, format: typeof STRING_FORMATS[number]): void {
+  definition.FormatName = { Value: format };
+  definition.Format = format;
+}
+
+function attributeEndpoint(entityLogicalName: string, logicalName: string, cast: string): string {
+  return `EntityDefinitions(LogicalName='${entityLogicalName}')/Attributes(LogicalName='${logicalName}')/Microsoft.Dynamics.CRM.${cast}`;
+}
+
+// Reads the stored format back after a create or update, so a silently ignored format is
+// visible in the tool result. Returns undefined for column types without a format.
+async function describeStoredFormat(
+  client: DataverseClient,
+  entityLogicalName: string,
+  logicalName: string,
+  columnType: string,
+  requested: { format?: string; integerFormat?: string }
+): Promise<string | undefined> {
+  if (columnType === "String") {
+    const { value, error } = await readBack<any>(client, attributeEndpoint(entityLogicalName, logicalName, "StringAttributeMetadata"), ["LogicalName", "FormatName", "Format"]);
+    return error ? `Stored format could not be read back: ${error}` : compareStored("Stored format", requested.format, value?.FormatName?.Value ?? value?.Format);
+  }
+  if (columnType === "Integer") {
+    const { value, error } = await readBack<any>(client, attributeEndpoint(entityLogicalName, logicalName, "IntegerAttributeMetadata"), ["LogicalName", "Format"]);
+    return error ? `Stored integer format could not be read back: ${error}` : compareStored("Stored integer format", requested.integerFormat, value?.Format);
+  }
+  return undefined;
+}
 
 // Helper function to create localized labels
 function createLocalizedLabel(text: string, languageCode: number = 1033): LocalizedLabel {
@@ -46,9 +81,10 @@ export function createColumnTool(server: McpServer, client: DataverseClient) {
         isValidForUpdate: z.boolean().optional().describe("Whether the column can be updated"),
         // String-specific options
         maxLength: z.number().optional().describe("Maximum length for string columns (default: 100)"),
-        format: z.enum(["Email", "Text", "TextArea", "Url", "Phone"]).optional().describe("Format for string columns"),
+        format: z.enum(STRING_FORMATS).optional().describe("Format for String columns, stored as FormatName (Dataverse default: Text). The stored format is read back and reported."),
         memoFormat: z.enum(["PlainText", "RichText"]).default("PlainText").describe("Format for Memo columns. RichText stores formatted HTML; PlainText creates a standard multiline text field."),
         // Integer-specific options
+        integerFormat: z.enum(INTEGER_FORMATS).optional().describe("Format for Integer columns: None (plain number), Duration, TimeZone, Language or Locale (Dataverse default: None)"),
         minValue: z.number().optional().describe("Minimum value for integer/decimal columns"),
         maxValue: z.number().optional().describe("Maximum value for integer/decimal columns"),
         // Decimal-specific options
@@ -98,7 +134,9 @@ export function createColumnTool(server: McpServer, client: DataverseClient) {
           case "String":
             attributeDefinition["@odata.type"] = "Microsoft.Dynamics.CRM.StringAttributeMetadata";
             attributeDefinition.MaxLength = params.maxLength || 100;
-            // Remove Format property for now to avoid enum issues
+            if (params.format) {
+              applyStringFormat(attributeDefinition, params.format);
+            }
             if (params.defaultValue && typeof params.defaultValue === "string") {
               attributeDefinition.DefaultValue = params.defaultValue;
             }
@@ -106,7 +144,9 @@ export function createColumnTool(server: McpServer, client: DataverseClient) {
 
           case "Integer":
             attributeDefinition["@odata.type"] = "Microsoft.Dynamics.CRM.IntegerAttributeMetadata";
-            // Remove Format property for now to avoid enum issues
+            if (params.integerFormat) {
+              attributeDefinition.Format = params.integerFormat;
+            }
             if (params.minValue !== undefined) attributeDefinition.MinValue = params.minValue;
             if (params.maxValue !== undefined) attributeDefinition.MaxValue = params.maxValue;
             // Note: IntegerAttributeMetadata doesn't support DefaultValue property
@@ -231,11 +271,16 @@ export function createColumnTool(server: McpServer, client: DataverseClient) {
           attributeDefinition
         );
 
+        const storedFormat = await describeStoredFormat(client, params.entityLogicalName, logicalName, params.columnType, {
+          format: params.format,
+          integerFormat: params.integerFormat
+        });
+
         return {
           content: [
             {
               type: "text",
-              text: `Successfully created column '${logicalName}' with display name '${params.displayName}' of type '${params.columnType}' in table '${params.entityLogicalName}'.\n\nProvided names:\n- Logical Name: ${logicalName}\n- Schema Name: ${schemaName}\n\nResponse: ${JSON.stringify(result, null, 2)}`
+              text: `Successfully created column '${logicalName}' with display name '${params.displayName}' of type '${params.columnType}' in table '${params.entityLogicalName}'.\n\nProvided names:\n- Logical Name: ${logicalName}\n- Schema Name: ${schemaName}${storedFormat ? `\n\n${storedFormat}` : ''}\n\nResponse: ${JSON.stringify(result, null, 2)}`
             }
           ]
         };
@@ -346,6 +391,8 @@ export function updateColumnTool(server: McpServer, client: DataverseClient) {
         isValidForCreate: z.boolean().optional().describe("Whether the column can be set during create"),
         isValidForUpdate: z.boolean().optional().describe("Whether the column can be updated"),
         memoFormat: z.enum(["PlainText", "RichText"]).optional().describe("New format for a Memo column. RichText stores formatted HTML; PlainText creates a standard multiline text field."),
+        format: z.enum(STRING_FORMATS).optional().describe("New format for a String column, stored as FormatName. The stored format is read back and reported."),
+        integerFormat: z.enum(INTEGER_FORMATS).optional().describe("New format for an Integer column: None, Duration, TimeZone, Language or Locale"),
         dateTimeBehavior: z.enum(["UserLocal", "TimeZoneIndependent", "DateOnly"]).optional().describe("New storage behavior for a DateTime column. Dataverse permits behavior changes only when the column is customizable and its current behavior supports the requested transition."),
         dateTimeFormat: z.enum(["DateOnly", "DateAndTime"]).optional().describe("New display format for a DateTime column"),
         defaultOptionValue: z.number().optional().describe("New default option value for a Picklist column. The value must exist in the column's option set.")
@@ -369,6 +416,8 @@ export function updateColumnTool(server: McpServer, client: DataverseClient) {
         const isDateTime = attributeType === 2 || attributeTypeName === "DateTimeType" || odataType.includes("DateTimeAttributeMetadata");
         const isMemo = attributeType === 7 || attributeTypeName === "MemoType" || odataType.includes("MemoAttributeMetadata");
         const isPicklist = attributeType === 11 || attributeTypeName === "PicklistType" || odataType.includes("PicklistAttributeMetadata");
+        const isString = attributeType === "String" || attributeType === 14 || attributeTypeName === "StringType" || odataType.includes("StringAttributeMetadata");
+        const isInteger = attributeType === "Integer" || attributeType === 5 || attributeTypeName === "IntegerType" || odataType.includes("IntegerAttributeMetadata");
 
         // Update only the specified properties
         if (params.displayName) {
@@ -411,6 +460,18 @@ export function updateColumnTool(server: McpServer, client: DataverseClient) {
             updatedAttribute.Format = "TextArea";
             updatedAttribute.FormatName = { Value: "TextArea" };
           }
+        }
+        if (params.format) {
+          if (!isString) {
+            throw new Error("format can only be updated on a String column. Use memoFormat for Memo columns.");
+          }
+          applyStringFormat(updatedAttribute, params.format);
+        }
+        if (params.integerFormat) {
+          if (!isInteger) {
+            throw new Error("integerFormat can only be updated on an Integer column.");
+          }
+          updatedAttribute.Format = params.integerFormat;
         }
         if (params.dateTimeBehavior || params.dateTimeFormat) {
           if (!isDateTime) {
@@ -455,17 +516,24 @@ export function updateColumnTool(server: McpServer, client: DataverseClient) {
           }
         );
 
-        if (params.dateTimeBehavior || params.dateTimeFormat) {
+        if (params.dateTimeBehavior || params.dateTimeFormat || params.format || params.integerFormat) {
           await client.callAction("PublishXml", {
             ParameterXml: `<importexportxml><entities><entity>${params.entityLogicalName}</entity></entities></importexportxml>`
           });
         }
 
+        const storedFormat = params.format || params.integerFormat
+          ? await describeStoredFormat(client, params.entityLogicalName, params.logicalName, params.format ? "String" : "Integer", {
+            format: params.format,
+            integerFormat: params.integerFormat
+          })
+          : undefined;
+
         return {
           content: [
             {
               type: "text",
-              text: `Successfully updated column '${params.logicalName}' in table '${params.entityLogicalName}'.`
+              text: `Successfully updated column '${params.logicalName}' in table '${params.entityLogicalName}'.${storedFormat ? `\n\n${storedFormat}` : ''}`
             }
           ]
         };

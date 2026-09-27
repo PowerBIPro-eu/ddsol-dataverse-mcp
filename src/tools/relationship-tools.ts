@@ -39,7 +39,9 @@ export function createRelationshipTool(server: McpServer, client: DataverseClien
         referencingAttributeLogicalName: z.string().optional().describe("Complete logical name for the lookup attribute to be created"),
         referencingAttributeSchemaName: z.string().optional().describe("Complete schema name for the lookup attribute. Must exactly match referencingAttributeLogicalName."),
         referencingAttributeDisplayName: z.string().optional().describe("Display name for the lookup attribute"),
-        
+        referencingAttributeRequiredLevel: z.enum(["None", "Recommended", "ApplicationRequired"]).optional().describe("Required level of the lookup attribute (One-to-Many only; default: None)"),
+        referencingAttributeDescription: z.string().optional().describe("Description of the lookup attribute (One-to-Many only)"),
+
         // Many-to-Many specific fields
         entity1LogicalName: z.string().optional().describe("First entity logical name for Many-to-Many relationships"),
         entity2LogicalName: z.string().optional().describe("Second entity logical name for Many-to-Many relationships"),
@@ -113,8 +115,9 @@ export function createRelationshipTool(server: McpServer, client: DataverseClien
               LogicalName: params.referencingAttributeLogicalName,
               SchemaName: params.referencingAttributeSchemaName,
               DisplayName: createLocalizedLabel(params.referencingAttributeDisplayName),
+              ...(params.referencingAttributeDescription ? { Description: createLocalizedLabel(params.referencingAttributeDescription) } : {}),
               RequiredLevel: {
-                Value: "None",
+                Value: params.referencingAttributeRequiredLevel ?? "None",
                 CanBeChanged: true,
                 ManagedPropertyLogicalName: "canmodifyrequirementlevelsettings"
               },

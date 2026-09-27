@@ -53,7 +53,7 @@ A Model Context Protocol (MCP) server for Microsoft Dataverse that enables schem
   - [Key Benefits](#key-benefits)
   - [Solution Workflow](#solution-workflow)
   - [Example: XYZ Organization Setup](#example-xyz-organization-setup)
-  - [Persistent Solution Context](#persistent-solution-context)
+  - [Project Solution Context (`.dataverse-mcp`)](#project-solution-context-dataverse-mcp)
 - [Supported Column Types](#supported-column-types)
   - [Column Type Details](#column-type-details)
   - [Tested Column Scenarios](#tested-column-scenarios)
@@ -86,6 +86,10 @@ A Model Context Protocol (MCP) server for Microsoft Dataverse that enables schem
   - [PowerPages WebAPI Generator](#powerpages-webapi-generator)
   - [PowerPages Configuration Management](#powerpages-configuration-management)
 - [Authentication](#authentication)
+  - [Device-code sign-in (`device`)](#device-code-sign-in-device)
+  - [Client credentials (`client_secret`)](#client-credentials-client_secret)
+  - [Environments and sessions](#environments-and-sessions)
+  - [State directory](#state-directory)
 - [Error Handling](#error-handling)
 - [Security Considerations](#security-considerations)
 - [Troubleshooting](#troubleshooting)
@@ -256,7 +260,7 @@ The MCP server implements enterprise-grade solution management following Microso
 - **Professional Schema Naming**: Uses publisher-based customization prefixes
 - **Solution Association**: All schema changes are automatically associated with the active solution
 - **ALM Support**: Enables proper solution packaging and deployment across environments
-- **Persistent Context**: Solution context survives server restarts via `.dataverse-mcp` file
+- **Project Context**: The solution context is stored in `.dataverse-mcp`, a project file meant to be committed
 - **Enterprise Governance**: Supports multiple publishers and solutions with proper isolation
 
 ### Solution Workflow
@@ -312,9 +316,9 @@ await use_mcp_tool("dataverse", "create_dataverse_column", {
 });
 ```
 
-### Persistent Solution Context
+### Project Solution Context (`.dataverse-mcp`)
 
-The server automatically persists solution context to a `.dataverse-mcp` file in the project root:
+The solution context lives in a `.dataverse-mcp` file in the working folder. It belongs to the project: commit it, so that every clone and worktree uses the same solution and publisher prefix.
 
 ```json
 {
@@ -322,16 +326,16 @@ The server automatically persists solution context to a `.dataverse-mcp` file in
   "solutionDisplayName": "XYZ Test Solution",
   "publisherUniqueName": "xyzpublisher",
   "publisherDisplayName": "XYZ Test Publisher",
-  "customizationPrefix": "xyz",
-  "lastUpdated": "2025-07-26T08:27:56.966Z"
+  "customizationPrefix": "xyz"
 }
 ```
 
-**Benefits of Persistence:**
-- **No Context Loss**: Solution context survives server restarts
-- **Instant Productivity**: Developers can immediately continue work
-- **Consistent Prefixes**: No need to remember and re-set solution context
-- **Team Isolation**: Each developer can have their own solution context (file is git-ignored)
+- `set_solution_context` creates the file when it does not exist. When it exists, choosing another solution applies to the current session only; pass `saveAsProjectDefault: true` to change the file. The server does not rewrite the file otherwise and stores no timestamps in it.
+- `clear_solution_context` clears the context for the current session; the file stays.
+- `get_solution_context` reports whether the context is the project default or a session override and, when an environment is selected, verifies that the solution exists there and that its publisher prefix matches `customizationPrefix`.
+- The environment is not part of the file: it is chosen per session (see [Environments and sessions](#environments-and-sessions)).
+
+Earlier versions recommended git-ignoring `.dataverse-mcp` and wrote a `lastUpdated` timestamp into it. Existing files keep working; remove the `.gitignore` entry and commit the file to share it.
 
 ## Supported Column Types
 
@@ -354,13 +358,14 @@ The MCP server supports all major Dataverse column types with comprehensive conf
 ### Column Type Details
 
 #### String Columns ✅ Fully Tested
-- **Formats**: Email, Text, TextArea, Url, Phone
+- **Formats**: Email, Text, TextArea, Url, TickerSymbol, Phone, Json (`format` on `create_dataverse_column` and `update_dataverse_column`; the stored format is read back and reported)
 - **Max Length**: Configurable (default: 100)
 - **Default Values**: Supported
 - **Example**: Employee name, email address, phone number
 
 #### Integer Columns ✅ Fully Tested
 - **Constraints**: Min/max value validation
+- **Formats**: None, Duration, TimeZone, Language, Locale (`integerFormat`)
 - **Default Values**: Not supported (Dataverse limitation)
 - **Example**: Age, quantity, score with range 0-100
 
@@ -2139,21 +2144,89 @@ This workflow ensures your PowerPages Code Site is properly configured to handle
 
 ## Authentication
 
-The server uses **Client Credentials flow** (Server-to-Server authentication) with Azure AD. This provides:
+The server supports two modes, chosen with `DATAVERSE_AUTH_MODE`. Without a client secret the default is `device`.
 
-- Secure authentication without user interaction
-- Application-level permissions
-- Suitable for automated scenarios
-- Token refresh handling
+### Device-code sign-in (`device`)
+
+Configure `DATAVERSE_CLIENT_ID` (an app registration that allows public client flows), optionally `DATAVERSE_TENANT_ID` (default `organizations`, the signing-in user's home tenant) and optionally `DATAVERSE_URL`.
+
+**Signing in.** When a tool needs a token and none is cached, it returns:
+
+```
+Sign-in required to continue.
+
+Open this URL: https://login.microsoft.com/device
+Enter code: ABCD12345
+
+(A browser window was opened automatically and the code was copied to your clipboard.)
+
+Run this tool again after completing sign-in.
+```
+
+Complete the sign-in within 15 minutes, then run the tool again. A call that finds a sign-in in progress keeps checking with Microsoft Entra for up to 20 seconds before reporting it as still pending; the repeated prompt shows when the code expires and what the last check returned.
+
+**One sign-in covers everything.** Microsoft Entra refresh tokens belong to the user and the app, not to one resource. After one sign-in the server obtains tokens silently for the Global Discovery Service (`list_dataverse_environments`) and for every environment you can access in the tenant. A new sign-in is needed only when Entra refuses: the refresh token was revoked or expired (for example after a password reset, or 90 days without use), a Conditional Access policy requires a fresh sign-in for an environment, or the environment belongs to another tenant. Cached tokens of different accounts are never mixed; you are asked to sign in instead.
+
+**Where tokens are cached.** One file per resource in `%LOCALAPPDATA%` (Windows) or `$HOME` (macOS, Linux), named `dataverse-mcp-auth-<hex of tenant:clientId:resource>.json`. The Global Discovery token uses the resource `https://globaldisco.crm.dynamics.com`. Files are written atomically and, on macOS and Linux, are readable only by you. Sign-ins in progress are stored next to them as `dataverse-mcp-pending-<hash>.json`, named by tenant, client and scope, so servers with different configurations never share one. Delete these files to sign out.
+
+**When sign-in fails,** the error is reported instead of the code being shown again:
+
+```
+Sign-in failed: Microsoft Entra did not issue a token for https://contoso.api.crm4.dynamics.com.
+error: invalid_grant
+error_description: AADSTS53003: Access has been blocked by Conditional Access policies. ...
+error_codes: 53003
+correlation_id: 00000000-0000-0000-0000-000000000000
+trace_id: 00000000-0000-0000-0000-000000000000
+timestamp: 2026-01-01 00:00:00Z
+The sign-in code was discarded. Resolve the cause above, then run the tool again to get a new code.
+```
+
+- `authorization_pending` and `slow_down` keep the code (`slow_down` adds 5 seconds to the polling interval).
+- `expired_token` and `bad_verification_code` issue a new code, and the prompt says why.
+- `authorization_declined` and every other Entra error discard the code and are reported as above.
+- Network errors and timeouts keep the code and are reported as such; every authentication call times out after 30 seconds.
+- A cached sign-in that cannot be refreshed because of a network problem is kept. One that Entra rejects is discarded, and the new prompt states the reason.
+
+Each check is also logged to stderr on one line, without codes or tokens. Because some MCP clients do not keep a server's stderr, **`get_dataverse_auth_status`** reports the same information on demand: cached sign-ins and their expiry, sign-ins in progress with their code, expiry and last check result, and recent errors. It never shows tokens.
+
+### Client credentials (`client_secret`)
+
+Server-to-server authentication with a client secret: set `DATAVERSE_CLIENT_ID`, `DATAVERSE_CLIENT_SECRET`, `DATAVERSE_TENANT_ID` and `DATAVERSE_URL` (see [Setup](#setup)). There is no user interaction; the application user needs a security role in the environment. `list_dataverse_environments` still needs a device sign-in, because the Global Discovery Service lists environments per user.
+
+### Environments and sessions
+
+The environment is chosen per session. A new server process starts without one, unless `DATAVERSE_URL` is set, and tools answer `No Dataverse environment is selected for this session...` until `set_dataverse_environment` is called, so confirm the environment with the user at the start of each session. The environment last used in a working folder is remembered only as a suggestion, shown in that message and by `get_active_dataverse_environment`; it is never selected automatically.
+
+Environment URLs are normalised to their origin: `https://Contoso.api.crm4.dynamics.com/api/data/v9.2/` and `https://contoso.api.crm4.dynamics.com` are the same environment. Both the API URL (`https://<org>.api.<region>.dynamics.com`) and the browser URL (`https://<org>.<region>.dynamics.com`) work; each has its own token cache entry.
+
+### State directory
+
+`DATAVERSE_MCP_STATE_DIR` (optional) is where the server keeps per-folder state outside your repositories, currently the last-used environment suggestion, in one subdirectory per working folder. Default: `%LOCALAPPDATA%\dataverse-mcp` on Windows, otherwise `$XDG_STATE_HOME/dataverse-mcp` or `~/.local/state/dataverse-mcp`. The Claude Code plugin will set it to its plugin data directory.
+
+Earlier versions wrote `.dataverse-mcp-environment.json` and `.dataverse-mcp-pending-*.json` into the working folder. On start these are migrated (the environment becomes the folder's suggestion) and removed.
 
 ## Error Handling
 
-The server includes comprehensive error handling:
+Dataverse errors keep their familiar first line, followed by every detail Dataverse returns:
 
-- **Authentication errors** - Invalid credentials or expired tokens
-- **API errors** - Dataverse-specific error messages with codes
-- **Validation errors** - Parameter validation and type checking
-- **Network errors** - Connection and timeout handling
+```
+Dataverse API Error: An unexpected error occurred. (Code: 0x80040216)
+Inner error: ...
+ErrorDetails.OperationStatus: 0
+ErrorDetails.SubErrorCode: -2146233088
+HelpLink: http://go.microsoft.com/fwlink/?LinkID=398563&error=Microsoft.Crm.CrmException%3a80040216&client=platform
+InnerError.Message: ...
+HTTP status: 500 Internal Server Error
+x-ms-service-request-id: 00000000-0000-0000-0000-000000000000
+```
+
+- The first line is unchanged, so anything that parses it keeps working.
+- Write requests ask Dataverse for its error-detail annotations (`Prefer: odata.include-annotations="Microsoft.PowerApps.CDS.ErrorDetails*,..."`), which it only returns on request; successful responses are unaffected.
+- Each field is truncated to 2,000 characters. Request bodies and headers, other than the request ID, are never included.
+- Failures without a Dataverse error body read `Dataverse request failed with HTTP <status>.`, `Dataverse request failed: <network error>` or `Dataverse request timed out`.
+- A read that fails with "does not exist" (`0x80040217` or `0x80060888`) within a minute of a write is retried once after 3 seconds, because new components can take a moment to become visible.
+- Sign-in errors are described under [Authentication](#authentication).
 
 ## Security Considerations
 
@@ -2249,14 +2322,7 @@ await use_mcp_tool("dataverse", "clear_solution_context", {});
 
 ### Git Integration
 
-The `.dataverse-mcp` file is automatically excluded from version control:
-
-```gitignore
-# MCP Dataverse context file
-.dataverse-mcp
-```
-
-This allows each developer to maintain their own solution context while preventing accidental sharing of environment-specific settings.
+Commit `.dataverse-mcp`: it names the project's solution and publisher prefix and contains no secrets, environment URLs or timestamps. Nothing else the server writes lives in the repository: tokens and sign-ins in progress are kept in the user's token cache, and the last-used environment suggestion in `DATAVERSE_MCP_STATE_DIR`.
 
 ## Developer Notebook
 

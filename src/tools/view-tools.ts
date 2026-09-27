@@ -33,6 +33,25 @@ function generateLayoutXml(entityLogicalName: string, primaryIdAttribute: string
   return `<grid name="resultset" object="1" jump="${columns[0] || primaryIdAttribute}" select="1" icon="1" preview="1">\n  <row name="result" id="${primaryIdAttribute}">\n${cells}\n  </row>\n</grid>`;
 }
 
+// Updates of Quick Find views have failed with "An unexpected error occurred"
+// (0x80040216) while regular views on the same tables updated fine; the cause is not
+// known yet. The error details above the note come from Dataverse.
+async function quickFindHint(client: DataverseClient, savedQueryId: string): Promise<string> {
+  try {
+    const view = await client.get<{ querytype?: number; isquickfindquery?: boolean }>(
+      `savedqueries(${savedQueryId})?$select=name,querytype,isquickfindquery`
+    );
+    if (view?.isquickfindquery || view?.querytype === QUERY_TYPES.QuickFind) {
+      return '\n\nThis is the Quick Find view of the table. Dataverse rejected the update with an unexpected error. ' +
+        'If the error details above do not point to something you can fix in the FetchXML or LayoutXML, ' +
+        'edit the Quick Find view in the maker portal (make.powerapps.com) instead.';
+    }
+  } catch {
+    // Keep the original error; the note is only a hint.
+  }
+  return '';
+}
+
 async function addViewToSolutionIfContextSet(client: DataverseClient, savedQueryId: string): Promise<void> {
   const solutionUniqueName = client.getSolutionUniqueName();
   if (!solutionUniqueName) return;
@@ -184,7 +203,8 @@ export function updateViewTool(server: McpServer, client: DataverseClient) {
           throw new Error("At least one field to update must be provided");
         }
 
-        await client.patch(`savedqueries(${params.savedQueryId})`, update);
+        // If-Match: * makes this an update only: a wrong ID fails instead of attempting a create.
+        await client.patch(`savedqueries(${params.savedQueryId})`, update, { 'If-Match': '*' });
 
         return {
           content: [
@@ -195,11 +215,13 @@ export function updateViewTool(server: McpServer, client: DataverseClient) {
           ]
         };
       } catch (error) {
+        const message = error instanceof Error ? error.message : 'Unknown error';
+        const quickFindNote = /0x80040216/.test(message) ? await quickFindHint(client, params.savedQueryId) : '';
         return {
           content: [
             {
               type: "text",
-              text: `Error updating view: ${error instanceof Error ? error.message : 'Unknown error'}`
+              text: `Error updating view: ${message}${quickFindNote}`
             }
           ],
           isError: true

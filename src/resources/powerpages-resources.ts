@@ -379,8 +379,8 @@ export function registerPowerPagesResources(server: McpServer, client: Dataverse
     },
     async (uri, params) => {
       // Debug logging to see what we're receiving
-      console.log('PowerPages Resource called with URI:', uri.href);
-      console.log('PowerPages Resource params:', JSON.stringify(params, null, 2));
+      console.error('PowerPages Resource called with URI:', uri.href);
+      console.error('PowerPages Resource params:', JSON.stringify(params, null, 2));
       
       // Extract parameters from the URI template
       const { operation, entityName, entityId } = params || {};
@@ -397,7 +397,7 @@ export function registerPowerPagesResources(server: McpServer, client: Dataverse
         const manualEntity = uriParts[1];
         const manualId = uriParts[2];
         
-        console.log('PowerPages Manual parsing:', { manualOp, manualEntity, manualId });
+        console.error('PowerPages Manual parsing:', { manualOp, manualEntity, manualId });
         
         const codeExamples = generatePowerPagesExamples(manualOp, manualEntity, manualId);
         return {

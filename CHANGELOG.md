@@ -5,7 +5,49 @@ All notable changes to the Dataverse MCP Server project will be documented in th
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.2.44]
+
+### Fixed
+- **Device-code sign-in no longer loops.** Every token-endpoint error except `authorization_declined`, `access_denied` and `expired_token` was reported as "sign-in still pending" with the same code, forever, and nothing was logged. Now only `authorization_pending` and `slow_down` keep the code, and `slow_down` adds 5 seconds to the polling interval. `expired_token` and `bad_verification_code` issue a new code. `authorization_declined`, `invalid_grant`, `invalid_client`, Conditional Access and consent errors end the sign-in with `Sign-in failed:` plus the Entra `error`, `error_description`, `error_codes`, `correlation_id`, `trace_id` and `timestamp`. Network errors keep the code and are reported. Every poll outcome is logged to stderr, without codes or tokens.
+- Parallel tool calls share one sign-in instead of requesting codes that overwrite each other. A sign-in completed by another server process is picked up from the token cache.
+- Every authentication call (device code, token poll, refresh, client credentials, Global Discovery) times out after 30 seconds.
+- A cached sign-in is no longer discarded because of a network error during refresh.
+- Dataverse errors keep their first line and now include the inner error, the `@Microsoft.PowerApps.CDS.*` error-detail annotations, the HTTP status and `x-ms-service-request-id`. Errors no longer carry the request configuration, which contained the bearer token.
+- `create_dataverse_column` applies `format` to String columns; it was ignored, so Url, Email, Phone and TextArea columns were created as Text.
+- `create_dataverse_table` sends `isAuditEnabled`, `isDuplicateDetectionEnabled`, `isValidForQueue`, `isConnectionsEnabled`, `isMailMergeEnabled` and `isDocumentManagementEnabled`, which were accepted but ignored.
+- `create_dataverse_alternate_key` no longer reports a created key as missing when metadata has not caught up.
+- stdout carries only JSON-RPC frames. Nine diagnostic `console.log` calls wrote to it, including "Loaded solution context" at startup and every progress line of the schema export.
+- The MCP handshake reports the package name and version instead of `0.2.2`.
+- Environment URLs are normalised (case, trailing slash, a pasted `/api/data/v9.2` path), so one environment no longer has several token cache entries, and a trailing slash in `DATAVERSE_URL` no longer produces `//api/data` request URLs.
+- Tools called without an environment say so instead of starting a sign-in for an invalid scope.
+- `update_dataverse_view` sends `If-Match: *`, so a wrong view ID cannot turn into a create. A `0x80040216` failure on a Quick Find view adds a note that the view may have to be edited in the maker portal.
+- Reads that fail with `0x80040217` or `0x80060888` right after a write are retried once.
+- The build output is cleaned before compiling, so files of deleted sources are no longer published.
+
+### Added
+- One sign-in covers the Global Discovery Service and every environment in the tenant: before asking for a device sign-in, the server reuses a refresh token cached for another resource. Tokens of different accounts are never mixed.
+- The Global Discovery token is cached like environment tokens, so a new session can list environments without signing in.
+- `get_dataverse_auth_status`: a read-only sign-in status (cached sign-ins, sign-ins in progress with the last check result, recent errors). It never shows tokens.
+- `update_dataverse_column`: `format` (String columns) and `integerFormat` (Integer columns). `create_dataverse_column`: `integerFormat`, and `format` also accepts `TickerSymbol` and `Json`. Both tools read the stored format back and warn on a mismatch.
+- `set_solution_context`: `saveAsProjectDefault`.
+- `get_dataverse_form`: `includeFormJson` (default `false`); `formjson` is omitted unless requested.
+- `create_dataverse_relationship`: `referencingAttributeRequiredLevel` and `referencingAttributeDescription` for the lookup column.
+- `get_role_privileges` returns the access depth of each privilege.
+- `DATAVERSE_MCP_STATE_DIR`: where per-folder state is kept (default `%LOCALAPPDATA%\dataverse-mcp` or `~/.local/state/dataverse-mcp`).
+- Unit tests (`npm test`) for authentication, error formatting, session handling and the changed tools.
+
+### Changed
+- **The environment is chosen per session.** It is no longer saved to `.dataverse-mcp-environment.json` or restored on start; only `DATAVERSE_URL` preselects one. The environment last used in a folder is offered as a suggestion.
+- **`.dataverse-mcp` is a project file meant to be committed.** It no longer stores `lastUpdated`. A solution other than the project default applies to the current session only (`saveAsProjectDefault` changes the file), and `clear_solution_context` no longer deletes the file. `get_solution_context` verifies the solution and its publisher prefix against the active environment.
+- Sign-ins in progress are stored next to the token cache instead of the working folder. `.dataverse-mcp-environment.json` and `.dataverse-mcp-pending-*.json` files left by earlier versions are migrated and removed on start.
+- The sign-in prompt is no longer prefixed with "Authentication failed:"; its first line is still `Sign-in required to continue.`
+- `create_dataverse_table`: the six flags above are optional without a default. Omitted flags keep the Dataverse defaults; before, they were effectively `false`.
+- Token cache files are written atomically, with owner-only permissions on macOS and Linux.
+- Node.js 18 or later is required.
+
+## [0.2.43]
+
+Changes released between 0.2.9 and 0.2.43.
 
 ### Added
 - `create_dataverse_record` creates one business-data record in an explicit Dataverse entity set. It supports structured record payloads, `@odata.bind` lookup bindings, and requires `confirmCreate: true` before writing data.

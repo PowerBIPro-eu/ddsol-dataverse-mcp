@@ -1,4 +1,6 @@
 #!/usr/bin/env node
+import "./stdout-guard.js";
+import { createRequire } from "node:module";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
@@ -159,7 +161,8 @@ import {
 import {
   listDataverseEnvironmentsTool,
   setDataverseEnvironmentTool,
-  getActiveDataverseEnvironmentTool
+  getActiveDataverseEnvironmentTool,
+  getDataverseAuthStatusTool
 } from "./tools/environment-tools.js";
 
 // Environment variables for Dataverse authentication
@@ -186,10 +189,12 @@ if (AUTH_MODE === 'client_secret' && !process.env.DATAVERSE_TENANT_ID) {
   throw new Error('DATAVERSE_TENANT_ID is required when DATAVERSE_AUTH_MODE=client_secret');
 }
 
-// Create MCP server
+// Create MCP server. Name and version come from package.json (next to build/ in the
+// published package), so the handshake always reports the build that is running.
+const packageJson = createRequire(import.meta.url)("../package.json") as { name: string; version: string };
 const server = new McpServer({
-  name: "dataverse-mcp",
-  version: "0.2.2"
+  name: packageJson.name,
+  version: packageJson.version
 });
 
 // Initialize Dataverse client
@@ -337,6 +342,7 @@ registerPowerPagesResources(server, dataverseClient);
 listDataverseEnvironmentsTool(server, dataverseClient);
 setDataverseEnvironmentTool(server, dataverseClient);
 getActiveDataverseEnvironmentTool(server, dataverseClient);
+getDataverseAuthStatusTool(server, dataverseClient);
 
 // Register view tools
 createViewTool(server, dataverseClient);

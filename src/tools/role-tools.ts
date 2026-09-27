@@ -515,28 +515,47 @@ export function getRolePrivilegesTool(server: McpServer, client: DataverseClient
     "get_role_privileges",
     {
       title: "Get Dataverse Role Privileges",
-      description: "Retrieves all privileges currently assigned to a security role, showing what permissions the role grants. Use this to audit role permissions and understand what access a role provides to users and teams.",
+      description: "Retrieves all privileges currently assigned to a security role, with the access depth of each (Basic = user, Local = business unit, Deep = parent: child business units, Global = organization). Use this to audit role permissions and understand what access a role provides to users and teams.",
       inputSchema: {
         roleId: z.string().describe("ID of the role to retrieve privileges for")
       }
     },
     async (params) => {
       try {
-        // Get role privileges using the correct Web API approach from Microsoft documentation
-        // Using $expand to get the roleprivileges_association collection
-        const response = await client.get(`roles(${params.roleId})?$select=roleid&$expand=roleprivileges_association($select=name,privilegeid)&$orderby=name`);
+        // RetrieveRolePrivilegesRole returns each privilege with its depth; the
+        // roleprivileges_association expansion only has names, so it fills gaps.
+        let withDepth: any[] | undefined;
+        let depthError: string | undefined;
+        try {
+          const response = await client.get(`RetrieveRolePrivilegesRole(RoleId=${params.roleId})`);
+          withDepth = response?.RolePrivileges ?? [];
+        } catch (error) {
+          depthError = error instanceof Error ? error.message.split('\n')[0] : String(error);
+        }
 
-        const rolePrivileges = response.roleprivileges_association || [];
-        const privileges = rolePrivileges.map((privilege: any) => ({
-          privilegeId: privilege.privilegeid,
-          privilegeName: privilege.name
-        }));
+        const names = new Map<string, string>();
+        if (!withDepth || withDepth.some((privilege) => !privilege.PrivilegeName)) {
+          const response = await client.get(`roles(${params.roleId})?$select=roleid&$expand=roleprivileges_association($select=name,privilegeid)`);
+          for (const privilege of response.roleprivileges_association || []) {
+            names.set(privilege.privilegeid, privilege.name);
+          }
+        }
 
+        const privileges: { privilegeId: string; privilegeName?: string; depth?: string }[] = withDepth
+          ? withDepth.map((privilege) => ({
+            privilegeId: privilege.PrivilegeId,
+            privilegeName: privilege.PrivilegeName ?? names.get(privilege.PrivilegeId),
+            depth: typeof privilege.Depth === 'number' ? getDepthName(privilege.Depth) : privilege.Depth
+          }))
+          : [...names.entries()].map(([privilegeId, privilegeName]) => ({ privilegeId, privilegeName }));
+        privileges.sort((a, b) => (a.privilegeName ?? '').localeCompare(b.privilegeName ?? ''));
+
+        const note = depthError ? `\n\nAccess depth could not be retrieved: ${depthError}` : '';
         return {
           content: [
             {
               type: "text",
-              text: `Role privileges (${privileges.length} found):\n\n${JSON.stringify(privileges, null, 2)}`
+              text: `Role privileges (${privileges.length} found):\n\n${JSON.stringify(privileges, null, 2)}${note}`
             }
           ]
         };

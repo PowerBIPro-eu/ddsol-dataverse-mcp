@@ -2,6 +2,44 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { DataverseClient } from "../dataverse-client.js";
 import { EntityMetadata, ODataResponse, LocalizedLabel } from "../types.js";
+import { compareStored, readBack } from "./metadata-readback.js";
+
+type TableFlagParam =
+  | "isAuditEnabled"
+  | "isDuplicateDetectionEnabled"
+  | "isValidForQueue"
+  | "isConnectionsEnabled"
+  | "isMailMergeEnabled"
+  | "isDocumentManagementEnabled";
+
+// The optional table flags, sent exactly as update_dataverse_table sends them: five are
+// BooleanManagedProperty values on EntityMetadata, IsDocumentManagementEnabled is a
+// plain Edm.Boolean.
+const TABLE_FLAGS: { param: TableFlagParam; property: string; managedProperty?: string }[] = [
+  { param: "isAuditEnabled", property: "IsAuditEnabled", managedProperty: "canmodifyauditsettings" },
+  { param: "isDuplicateDetectionEnabled", property: "IsDuplicateDetectionEnabled", managedProperty: "canmodifyduplicatedetectionsettings" },
+  { param: "isValidForQueue", property: "IsValidForQueue", managedProperty: "canmodifyqueuesettings" },
+  { param: "isConnectionsEnabled", property: "IsConnectionsEnabled", managedProperty: "canmodifyconnectionsettings" },
+  { param: "isMailMergeEnabled", property: "IsMailMergeEnabled", managedProperty: "canmodifymailmergesettings" },
+  { param: "isDocumentManagementEnabled", property: "IsDocumentManagementEnabled" }
+];
+
+// Reads the flags back after creation so the result shows what Dataverse stored.
+async function describeStoredFlags(
+  client: DataverseClient,
+  logicalName: string,
+  requested: Partial<Record<TableFlagParam, boolean>>
+): Promise<string> {
+  const { value, error } = await readBack<any>(client, `EntityDefinitions(LogicalName='${logicalName}')`, TABLE_FLAGS.map((flag) => flag.property));
+  if (error) {
+    return `Stored settings could not be read back: ${error}`;
+  }
+  const lines = TABLE_FLAGS.map((flag) => {
+    const stored = flag.managedProperty ? value?.[flag.property]?.Value : value?.[flag.property];
+    return `- ${compareStored(flag.property, requested[flag.param], stored)}`;
+  });
+  return `Stored settings:\n${lines.join("\n")}`;
+}
 
 // Helper function to create localized labels
 function createLocalizedLabel(text: string, languageCode: number = 1033): LocalizedLabel {
@@ -38,12 +76,12 @@ export function createTableTool(server: McpServer, client: DataverseClient) {
         ownershipType: z.enum(["UserOwned", "OrganizationOwned"]).default("UserOwned").describe("Ownership type of the table"),
         hasActivities: z.boolean().default(false).describe("Whether the table can have activities"),
         hasNotes: z.boolean().default(false).describe("Whether the table can have notes"),
-        isAuditEnabled: z.boolean().default(false).describe("Whether auditing is enabled"),
-        isDuplicateDetectionEnabled: z.boolean().default(false).describe("Whether duplicate detection is enabled"),
-        isValidForQueue: z.boolean().default(false).describe("Whether records can be added to queues"),
-        isConnectionsEnabled: z.boolean().default(false).describe("Whether connections are enabled"),
-        isMailMergeEnabled: z.boolean().default(false).describe("Whether mail merge is enabled"),
-        isDocumentManagementEnabled: z.boolean().default(false).describe("Whether document management is enabled"),
+        isAuditEnabled: z.boolean().optional().describe("Whether auditing is enabled (omit to keep the Dataverse default)"),
+        isDuplicateDetectionEnabled: z.boolean().optional().describe("Whether duplicate detection is enabled (omit to keep the Dataverse default)"),
+        isValidForQueue: z.boolean().optional().describe("Whether records can be added to queues (omit to keep the Dataverse default)"),
+        isConnectionsEnabled: z.boolean().optional().describe("Whether connections are enabled (omit to keep the Dataverse default)"),
+        isMailMergeEnabled: z.boolean().optional().describe("Whether mail merge is enabled (omit to keep the Dataverse default)"),
+        isDocumentManagementEnabled: z.boolean().optional().describe("Whether document management is enabled (omit to keep the Dataverse default)"),
         isQuickCreateEnabled: z.boolean().default(false).describe("Whether the table is enabled for quick create forms when Dataverse supports quick create for the table"),
         changeTrackingEnabled: z.boolean().default(false).describe("Whether Dataverse change tracking is enabled for the table"),
         primaryNameDisplayName: z.string().describe("Display name of the primary name attribute"),
@@ -60,7 +98,7 @@ export function createTableTool(server: McpServer, client: DataverseClient) {
 
         const ownershipTypeValue = params.ownershipType === "UserOwned" ? "UserOwned" : "OrganizationOwned";
 
-        const entityDefinition = {
+        const entityDefinition: Record<string, any> = {
           "@odata.type": "Microsoft.Dynamics.CRM.EntityMetadata",
           LogicalName: params.logicalName,
           SchemaName: params.schemaName,
@@ -95,13 +133,24 @@ export function createTableTool(server: McpServer, client: DataverseClient) {
           ]
         };
 
+        // Only flags the caller supplied are sent, so omitted ones keep the Dataverse default.
+        for (const flag of TABLE_FLAGS) {
+          const value = params[flag.param];
+          if (value !== undefined) {
+            entityDefinition[flag.property] = flag.managedProperty
+              ? { Value: value, CanBeChanged: true, ManagedPropertyLogicalName: flag.managedProperty }
+              : value;
+          }
+        }
+
         const result = await client.postMetadata("EntityDefinitions", entityDefinition);
+        const storedFlags = await describeStoredFlags(client, params.logicalName, params);
 
         return {
           content: [
             {
               type: "text",
-              text: `Successfully created table '${params.logicalName}' with display name '${params.displayName}'.\n\nProvided values:\n- Logical Name: ${params.logicalName}\n- Schema Name: ${params.schemaName}\n- Display Collection Name: ${params.displayCollectionName}\n- Primary Name Attribute: ${params.primaryNameLogicalName}${params.primaryNameAutoNumberFormat ? `\n- AutoNumber Format: ${params.primaryNameAutoNumberFormat}` : ''}\n\nResponse: ${JSON.stringify(result, null, 2)}`
+              text: `Successfully created table '${params.logicalName}' with display name '${params.displayName}'.\n\nProvided values:\n- Logical Name: ${params.logicalName}\n- Schema Name: ${params.schemaName}\n- Display Collection Name: ${params.displayCollectionName}\n- Primary Name Attribute: ${params.primaryNameLogicalName}${params.primaryNameAutoNumberFormat ? `\n- AutoNumber Format: ${params.primaryNameAutoNumberFormat}` : ''}\n\n${storedFlags}\n\nResponse: ${JSON.stringify(result, null, 2)}`
             }
           ]
         };

@@ -104,19 +104,25 @@ export function getFormTool(server: McpServer, client: DataverseClient) {
     "get_dataverse_form",
     {
       title: "Get Dataverse Form",
-      description: "Retrieves a form (systemform) by its ID, including the FormXML. Useful for cloning an existing form's XML as the starting point for a new one.",
+      description: "Retrieves a form (systemform) by its ID, including the FormXML. Useful for cloning an existing form's XML as the starting point for a new one. The large formjson column is omitted unless includeFormJson is true.",
       inputSchema: {
-        formId: z.string().describe("GUID of the form (formid)")
+        formId: z.string().describe("GUID of the form (formid)"),
+        includeFormJson: z.boolean().default(false).describe("Include the formjson column, which can be several hundred kilobytes (default: false)")
       }
     },
     async (params) => {
       try {
         const result = await client.get(`systemforms(${params.formId})`);
+        let omitted = '';
+        if (!params.includeFormJson && result && typeof result === 'object' && 'formjson' in result) {
+          delete (result as Record<string, unknown>).formjson;
+          omitted = '\n\n(formjson omitted; pass includeFormJson: true to include it.)';
+        }
         return {
           content: [
             {
               type: "text",
-              text: `Form information:\n\n${JSON.stringify(result, null, 2)}`
+              text: `Form information:\n\n${JSON.stringify(result, null, 2)}${omitted}`
             }
           ]
         };
