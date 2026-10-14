@@ -55,24 +55,18 @@ const autoNumberFormatSchema = z.string().refine((format) => {
   message: "Invalid AutoNumber format. Use placeholders like {SEQNUM:4}, {RANDSTRING:3} (1-6), {DATETIMEUTC:yyyyMMdd}"
 });
 
-// Helper function to generate schema name from display name and prefix
-function generateColumnSchemaName(displayName: string, prefix: string): string {
-  // Remove whitespaces and special characters, but preserve original case
-  const cleanName = displayName.replace(/\s+/g, '').replace(/[^a-zA-Z0-9]/g, '');
-  return `${prefix}_${cleanName}`;
-}
-
 // Create AutoNumber column tool
 export function createAutoNumberColumnTool(server: McpServer, client: DataverseClient) {
   server.registerTool(
     'create_autonumber_column',
     {
       title: 'Create AutoNumber Column',
-      description: 'Creates a new AutoNumber column in a Dataverse table with specified format. AutoNumber columns automatically generate alphanumeric strings using sequential numbers, random strings, and datetime placeholders. Requires a solution context to be set first.',
+      description: 'Creates a new AutoNumber column in a Dataverse table with specified format. The caller must provide matching schemaName and logicalName values; this tool does not derive column names. Requires a solution context to be set first.',
       inputSchema: {
         entityLogicalName: z.string().describe('Logical name of the table to add the AutoNumber column to'),
         displayName: z.string().describe('Display name for the AutoNumber column (e.g., "Serial Number")'),
-        schemaName: z.string().optional().describe('Schema name for the column (auto-generated if not provided)'),
+        schemaName: z.string().describe('Complete schema name for the column, including the publisher prefix. Must exactly match logicalName.'),
+        logicalName: z.string().describe('Complete logical name for the column, including the publisher prefix. Must exactly match schemaName.'),
         description: z.string().optional().describe('Description of the AutoNumber column'),
         autoNumberFormat: autoNumberFormatSchema.describe('AutoNumber format using placeholders like "PREFIX-{SEQNUM:4}-{RANDSTRING:3}-{DATETIMEUTC:yyyyMMdd}"'),
         requiredLevel: z.enum(['None', 'SystemRequired', 'ApplicationRequired', 'Recommended']).default('None').describe('Required level of the column'),
@@ -86,20 +80,16 @@ export function createAutoNumberColumnTool(server: McpServer, client: DataverseC
     async (params) => {
     
       try {
-        // Get the customization prefix from the solution context
-        const prefix = client.getCustomizationPrefix();
-        if (!prefix) {
-          throw new Error('No customization prefix available. Please set a solution context using set_solution_context tool first.');
+        if (!client.getSolutionContext()) {
+          throw new Error('No solution context available. Please set a solution context using set_solution_context tool first.');
         }
-
-        // Generate schema name if not provided
-        const schemaName = params.schemaName || generateColumnSchemaName(params.displayName, prefix);
 
         // Prepare the column metadata
         const columnMetadata = {
           "@odata.type": "Microsoft.Dynamics.CRM.StringAttributeMetadata",
           "AttributeType": "String",
-          "SchemaName": schemaName,
+          "LogicalName": params.logicalName,
+          "SchemaName": params.schemaName,
           "DisplayName": createLocalizedLabel(params.displayName),
           "Format": "Text", // Required for AutoNumber columns
           "AutoNumberFormat": params.autoNumberFormat,
@@ -134,7 +124,7 @@ export function createAutoNumberColumnTool(server: McpServer, client: DataverseC
           content: [
             {
               type: "text",
-              text: `Successfully created AutoNumber column '${schemaName}' with display name '${params.displayName}' in table '${params.entityLogicalName}'.\n\nAutoNumber Format: ${params.autoNumberFormat}\nMax Length: ${params.maxLength}\nRequired Level: ${params.requiredLevel}\n\nResponse: ${JSON.stringify(result, null, 2)}`
+              text: `Successfully created AutoNumber column '${params.logicalName}' with display name '${params.displayName}' in table '${params.entityLogicalName}'.\n\nAutoNumber Format: ${params.autoNumberFormat}\nMax Length: ${params.maxLength}\nRequired Level: ${params.requiredLevel}\n\nResponse: ${JSON.stringify(result, null, 2)}`
             }
           ]
         };

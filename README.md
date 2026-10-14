@@ -26,6 +26,8 @@ A Model Context Protocol (MCP) server for Microsoft Dataverse that enables schem
 
 ✅ **AutoNumber Column Management** - Create and manage AutoNumber columns with customizable format patterns for automatic serial numbers, reference codes, and unique identifiers
 
+✅ **Business Record Creation** - Create individual Dataverse business records with structured payloads and lookup bindings
+
 ✅ **Professional Integration** - OAuth2 authentication, comprehensive error handling, and enterprise-ready deployment
 
 ✅ **Production Ready** - Comprehensive testing completed with 7 critical bugs found and fixed, 100% tool coverage achieved
@@ -43,6 +45,8 @@ A Model Context Protocol (MCP) server for Microsoft Dataverse that enables schem
   - [Team Operations](#team-operations)
   - [Business Unit Operations](#business-unit-operations)
   - [Schema Export Operations](#schema-export-operations)
+  - [Business Process Flow Operations](#business-process-flow-operations)
+  - [View Grid Control Operations](#view-grid-control-operations)
   - [WebAPI Call Generator](#webapi-call-generator)
   - [PowerPages WebAPI Generator](#powerpages-webapi-generator)
   - [PowerPages Configuration Management](#powerpages-configuration-management)
@@ -50,7 +54,7 @@ A Model Context Protocol (MCP) server for Microsoft Dataverse that enables schem
   - [Key Benefits](#key-benefits)
   - [Solution Workflow](#solution-workflow)
   - [Example: XYZ Organization Setup](#example-xyz-organization-setup)
-  - [Persistent Solution Context](#persistent-solution-context)
+  - [Project Solution Context (`.dataverse-mcp`)](#project-solution-context-dataverse-mcp)
 - [Supported Column Types](#supported-column-types)
   - [Column Type Details](#column-type-details)
   - [Tested Column Scenarios](#tested-column-scenarios)
@@ -77,12 +81,17 @@ A Model Context Protocol (MCP) server for Microsoft Dataverse that enables schem
   - [Managing Security Roles](#managing-security-roles)
   - [Managing Teams](#managing-teams)
   - [Managing Business Units](#managing-business-units)
+  - [Creating a Business Process Flow](#creating-a-business-process-flow)
   - [Exporting Solution Schema](#exporting-solution-schema)
   - [Mermaid Diagram Generation](#mermaid-diagram-generation)
   - [WebAPI Call Generator](#webapi-call-generator)
   - [PowerPages WebAPI Generator](#powerpages-webapi-generator)
   - [PowerPages Configuration Management](#powerpages-configuration-management)
 - [Authentication](#authentication)
+  - [Device-code sign-in (`device`)](#device-code-sign-in-device)
+  - [Client credentials (`client_secret`)](#client-credentials-client_secret)
+  - [Environments and sessions](#environments-and-sessions)
+  - [State directory](#state-directory)
 - [Error Handling](#error-handling)
 - [Security Considerations](#security-considerations)
 - [Troubleshooting](#troubleshooting)
@@ -115,21 +124,21 @@ A Model Context Protocol (MCP) server for Microsoft Dataverse that enables schem
 This MCP server provides comprehensive tools for Dataverse schema management:
 
 ### Table Operations
-- **create_dataverse_table** ✅ **Fully Tested** - **Create Dataverse Table**: Creates a new custom table in Dataverse with the specified configuration. Use this when you need to create a new entity to store business data. Requires a solution context to be set first.
+- **create_dataverse_table** ✅ **Fully Tested** - **Create Dataverse Table**: Creates a new custom table in Dataverse with the specified configuration. The caller must provide complete table and primary-name identifiers plus the plural display name. `isBusinessProcessEnabled` enables the table for business process flows (one-way). Requires a solution context to be set first.
 - **get_dataverse_table** ✅ **Fully Tested** - **Get Dataverse Table**: Retrieves detailed information about a specific Dataverse table including its metadata, properties, and configuration. Use this to inspect table definitions and understand table structure.
-- **update_dataverse_table** ✅ **Fully Tested** - **Update Dataverse Table**: Updates the properties and configuration of an existing Dataverse table. Use this to modify table settings like display names, descriptions, or feature enablement (activities, notes, auditing, etc.). Changes are published automatically.
+- **update_dataverse_table** ✅ **Fully Tested** - **Update Dataverse Table**: Updates the properties and configuration of an existing Dataverse table. Use this to modify table settings like display names, descriptions, or feature enablement (activities, notes, auditing, business process flows via the one-way `isBusinessProcessEnabled`, etc.). Changes are published automatically.
 - **delete_dataverse_table** ✅ **Fully Tested** - **Delete Dataverse Table**: Permanently deletes a custom table from Dataverse. WARNING: This action cannot be undone and will remove all data in the table. Use with extreme caution and only for tables that are no longer needed.
 - **list_dataverse_tables** ✅ **Fully Tested** - **List Dataverse Tables**: Retrieves a list of tables in the Dataverse environment with filtering options. Use this to discover available tables, find custom tables, or get an overview of the data model. Supports filtering by custom/system tables and managed/unmanaged status.
 
 ### Column Operations
-- **create_dataverse_column** ✅ **Fully Tested** - **Create Dataverse Column**: Creates a new column (field) in a Dataverse table with the specified data type and configuration. Supports various column types including text, numbers, dates, lookups, and choice lists. Use this to add new fields to store specific data in your tables. Requires a solution context to be set first.
+- **create_dataverse_column** ✅ **Fully Tested** - **Create Dataverse Column**: Creates a new column (field) in a Dataverse table with the specified data type and configuration. The caller must provide matching, complete `schemaName` and `logicalName` values, including the publisher prefix. Requires a solution context to be set first.
 - **get_dataverse_column** ✅ **Fully Tested** - **Get Dataverse Column**: Retrieves detailed information about a specific column in a Dataverse table, including its data type, properties, and configuration settings. Use this to inspect column definitions and understand field structure.
 - **update_dataverse_column** ✅ **Fully Tested** - **Update Dataverse Column**: Updates the properties and configuration of an existing column in a Dataverse table. Use this to modify column settings like display names, descriptions, required levels, or audit settings. Note that data type cannot be changed after creation.
 - **delete_dataverse_column** ✅ **Fully Tested** - **Delete Dataverse Column**: Permanently deletes a column from a Dataverse table. WARNING: This action cannot be undone and will remove all data stored in this column. Use with extreme caution and only for columns that are no longer needed.
 - **list_dataverse_columns** ✅ **Fully Tested** - **List Dataverse Columns**: Retrieves a list of columns in a specific Dataverse table with filtering options. Use this to discover available fields in a table, find custom columns, or get an overview of the table structure. Supports filtering by custom/system columns and managed/unmanaged status.
 
 ### AutoNumber Column Operations
-- **create_autonumber_column** ✅ **Fully Tested** - **Create AutoNumber Column**: Creates a new AutoNumber column in a Dataverse table with specified format. AutoNumber columns automatically generate alphanumeric strings using sequential numbers, random strings, and datetime placeholders. Requires a solution context to be set first.
+- **create_autonumber_column** ✅ **Fully Tested** - **Create AutoNumber Column**: Creates a new AutoNumber column in a Dataverse table with specified format. The caller must provide matching, complete `schemaName` and `logicalName` values. Requires a solution context to be set first.
 - **update_autonumber_format** ✅ **Fully Tested** - **Update AutoNumber Format**: Updates the AutoNumberFormat of an existing AutoNumber column. This changes how future values will be generated but does not affect existing records.
 - **set_autonumber_seed** ✅ **Fully Tested** - **Set AutoNumber Seed**: Sets the seed value for an AutoNumber column's sequential segment using the SetAutoNumberSeed action. This controls the starting number for future records. Note: Seed values are environment-specific and not included in solutions.
 - **get_autonumber_column** ✅ **Fully Tested** - **Get AutoNumber Column**: Retrieves detailed information about an AutoNumber column including its current format, properties, and configuration.
@@ -137,10 +146,32 @@ This MCP server provides comprehensive tools for Dataverse schema management:
 - **convert_to_autonumber** ✅ **Fully Tested** - **Convert to AutoNumber**: Converts an existing text column to an AutoNumber column by adding an AutoNumberFormat. The column must be a String type with Text format and should be empty or contain compatible data.
 
 ### Relationship Operations
-- **create_dataverse_relationship** ✅ **Fully Tested** - **Create Dataverse Relationship**: Creates a relationship between two Dataverse tables. Supports One-to-Many relationships (parent-child with lookup field) and Many-to-Many relationships (junction table). Use this to establish data connections between tables, enable navigation, and maintain referential integrity.
+- **create_dataverse_relationship** ✅ **Fully Tested** - **Create Dataverse Relationship**: Creates a relationship between two Dataverse tables. Supports One-to-Many relationships (parent-child with lookup field) and Many-to-Many relationships (junction table). Configures all cascade behaviors (Assign, Delete, Merge, Reparent, Share, Unshare, RollupView) and associated menu settings, including separate menu configuration per entity for Many-to-Many relationships. Use this to establish data connections between tables, enable navigation, and maintain referential integrity.
 - **get_dataverse_relationship** ✅ **Fully Tested** - **Get Dataverse Relationship**: Retrieves detailed information about a specific relationship between Dataverse tables, including its configuration, cascade settings, and menu behavior. Use this to inspect relationship definitions and understand table connections.
+- **update_dataverse_relationship** - **Update Dataverse Relationship**: Updates an existing relationship's cascade behaviors, associated menu configuration, and Advanced Find/hierarchical flags. Only supplied fields are changed — every other setting is read from the current relationship and preserved unchanged.
 - **delete_dataverse_relationship** ✅ **Fully Tested** - **Delete Dataverse Relationship**: Permanently deletes a relationship between Dataverse tables. WARNING: This action cannot be undone and will remove the connection between tables, including any lookup fields for One-to-Many relationships. Use with extreme caution.
 - **list_dataverse_relationships** ✅ **Fully Tested** - **List Dataverse Relationships**: Retrieves a list of relationships in the Dataverse environment with filtering options. Use this to discover table connections, find custom relationships, or get an overview of the data model relationships. Supports filtering by entity, relationship type, and managed/unmanaged status.
+
+### Status Reason Operations
+- **get_dataverse_status_reasons** - Lists the system Status Reason options on a table, grouped by Active and Inactive state.
+- **add_dataverse_status_reason** - Adds a Status Reason to the Active or Inactive state of a table.
+- **update_dataverse_status_reason** - Updates a Status Reason label, description, or color.
+- **delete_dataverse_status_reason** - Deletes a custom Status Reason by numeric value.
+- **set_dataverse_status_reason_default** - Sets the default Status Reason for the Active or Inactive state.
+
+### Chart Operations
+- **create_dataverse_chart** - Creates a system or user chart using explicit data and presentation XML.
+- **get_dataverse_chart** - Retrieves a system or user chart by GUID.
+- **list_dataverse_charts** - Lists system or user charts, optionally filtered by table.
+- **update_dataverse_chart** - Updates chart metadata or XML definitions.
+- **delete_dataverse_chart** - Deletes a system or user chart by GUID.
+
+### Alternate Key Operations
+- **create_dataverse_alternate_key** - Creates an alternate key from one or more existing table columns. Unique-index creation is asynchronous.
+- **get_dataverse_alternate_key** - Retrieves an alternate key by metadata ID or schema name, including its index status.
+- **list_dataverse_alternate_keys** - Lists alternate keys for a table, including key attributes and index status.
+- **delete_dataverse_alternate_key** - Permanently deletes an alternate key by metadata ID.
+- **reactivate_dataverse_alternate_key** - Restarts index creation for a failed alternate key.
 
 ### Option Set Operations
 - **create_dataverse_optionset** ✅ **Fully Tested** - **Create Dataverse Option Set**: Creates a new global option set (choice list) in Dataverse with predefined options. Use this to create reusable choice lists that can be used across multiple tables and columns. Option sets provide consistent data entry options and improve data quality.
@@ -202,6 +233,32 @@ This MCP server provides comprehensive tools for Dataverse schema management:
 - **export_solution_schema** ✅ **Fully Tested** - **Export Solution Schema**: Exports a comprehensive JSON schema of Dataverse tables, columns, relationships, and option sets. Use this to document your data model, generate diagrams, or analyze solution structure. Supports filtering by prefixes, system/custom components, and specific tables.
 - **generate_mermaid_diagram** ✅ **Fully Tested** - **Generate Mermaid Diagram**: Generates a Mermaid entity relationship diagram from an exported schema JSON file. Creates visual documentation of your data model with tables, columns, and relationships. Perfect for documentation, presentations, and understanding data structure.
 
+### Business Record Operations
+- **create_dataverse_record** - **Create Dataverse Record**: Creates one record in an explicit plural entity set. Provide structural column logical names in `record`; use case-sensitive navigation-property names for lookup `@odata.bind` keys, such as `new_AccountId@odata.bind: "/accounts(<guid>)"`. Choice values are integers. The caller must set `confirmCreate: true` before the tool writes business data.
+- **create_dataverse_records** - **Create Dataverse Records**: Creates up to 25 records in one explicit entity set. Each returned Dataverse representation verifies its record was created. Requires `confirmWrite: true`.
+- **update_dataverse_records** - **Update Dataverse Records**: Updates up to 25 identified records in one explicit entity set and re-fetches every record to verify the write. Requires `confirmWrite: true`.
+- **delete_dataverse_records** - **Delete Dataverse Records**: Deletes up to 25 identified records in one explicit entity set. A successful Dataverse delete response confirms each deletion. Requires `confirmDelete: true`; deletion cannot be undone.
+
+Bulk tools process records sequentially. If a batch fails partway through, the error response includes the records confirmed as completed before the failure so callers can reconcile the partial result.
+
+### Business Process Flow Operations
+- **create_business_process_flow** - **Create Business Process Flow**: Creates a BPF definition as a Draft `workflow` row (category 4, type 1, scope Organization) from either a compact JSON `definition` (entity segments → stages → steps/branches; column types and display names are resolved from the table metadata) or complete BPF `xaml`. Checks that the unique name starts with the solution's customization prefix, that the primary table is BPF-enabled and that the unique name is free, embeds the `workflowid` in the XAML `x:Class`, sends the `MSCRM.SolutionUniqueName` header and adds the process (component type 29) to the solution context.
+- **get_business_process_flow** - **Get Business Process Flow**: Retrieves a process by `workflowid` or unique name with its XAML, state, primary entity and process order, plus a stage/step/branch summary parsed from the XAML.
+- **list_business_process_flows** - **List Business Process Flows**: Lists BPF definitions (`category eq 4 and type eq 1`), optionally filtered by primary table and managed state.
+- **update_business_process_flow** - **Update Business Process Flow**: Updates name, description, process order or the definition (`xaml` or compact `definition`). Definition changes need Draft state: the tool refuses them on an active process and tells you to deactivate first; the XAML class is rewritten to the target `workflowid`.
+- **activate_business_process_flow** - **Activate Business Process Flow**: Sets statecode 1 / statuscode 2. Dataverse then generates the BPF table named after the unique name (the `processstage` rows already exist from the saved definition); the tool reads the generated table back (`EntityDefinitions` with `IsBPFEntity eq true`, polling up to 90 s because table metadata can lag behind the activation) and reminds you that only System Administrator and System Customizer get privileges on it (use `grant_table_privileges` for the other roles).
+- **deactivate_business_process_flow** - **Deactivate Business Process Flow**: Sets the process back to Draft (statecode 0 / statuscode 1) so it can be edited or deleted.
+- **delete_business_process_flow** - **Delete Business Process Flow**: Deletes a Draft process (requires `confirmDelete: true`); Dataverse removes the generated BPF table with it.
+- **list_business_process_flow_stages** - **List Business Process Flow Stages**: Lists the `processstage` rows of a process (`stagename`, `stagecategory`, `primaryentitytypecode`), ordered like the definition when the XAML can be read.
+- **build_business_process_flow_xaml** - **Build Business Process Flow XAML**: Deterministically generates the full BPF XAML from the compact definition without writing anything; returns the XAML, the embedded `workflowid` and the generated stage ids.
+
+A table must be enabled for business process flows before a process can target it: pass `isBusinessProcessEnabled: true` to `create_dataverse_table` or `update_dataverse_table`. The flag is one-way; Dataverse never lets you switch it off again, so the update tool rejects `false` on an enabled table.
+
+The XAML generator mirrors real solution exports exactly (one `EntityComposite` per stage, `StageComposite`/`StepComposite`/`mcwb:Control`, `StageRelationshipCollectionComposite` for cross-table transitions, `ConditionSequence` branches with `mcwc:SetNextStage`); `test/test-bpf-xaml-roundtrip.mjs` rebuilds exported processes byte-for-byte. Control ClassIds confirmed in BPF exports: boolean `67fac785-…`, choice `3ef39988-…`, status reason `5d68b988-…`, lookup `270bd3db-…`, text `4273edbd-…`, multiline text `e0dece4b-…`, whole number `c6d124ca-…`, decimal `c3efe0c3-…`, date `5b773807-…`; money and URL come from the FormXML control table and are flagged with a warning. Other column types need an explicit `classId` on the step. Limits enforced from the Microsoft docs: at most 5 tables, 30 stages per table and 30 steps per stage. Branch conditions support `Equal`, `NotEqual`, `GreaterThan`, `GreaterEqual`, `LessThan`, `LessEqual`, `Contains` and `DoesNotContain` against a choice, status, state, boolean, number or text literal, or against another column (`compareToColumn`); `Null`/`NotNull` and lookup/money/date literals have no confirmed export sample and are not generated.
+
+### View Grid Control Operations
+- **set_dataverse_view_powerapps_grid_control** - **Set Dataverse View Power Apps Grid Control**: Adds, replaces, or reconfigures the Power Apps grid control (`Microsoft.PowerApps.PowerAppsOneGrid`) on a specific system view by editing its LayoutXML — the same per-view assignment shown in the maker portal's view designer "Components" panel, distinct from the table-wide grid control setting. Exposes the full documented parameter set (editing, filtering/sorting/grouping/aggregation, selection, jump bar, pagination, choice colors, status/type icons, navigation types, reflow behavior, list-view options, lookup filter behavior, customizer control, and which of web/mobile/tablet form factors show the control). Requires `confirmUpdate: true`; publishing remains separate via `publish_dataverse_customizations`.
+
 ### WebAPI Call Generator
 - **generate_webapi_call** ✅ **Fully Tested** - **Generate Dataverse WebAPI Call**: Generate HTTP requests, curl commands, and JavaScript examples for Dataverse WebAPI operations. Supports all CRUD operations, associations, actions, and functions with proper OData query parameters and headers.
 
@@ -220,7 +277,7 @@ The MCP server implements enterprise-grade solution management following Microso
 - **Professional Schema Naming**: Uses publisher-based customization prefixes
 - **Solution Association**: All schema changes are automatically associated with the active solution
 - **ALM Support**: Enables proper solution packaging and deployment across environments
-- **Persistent Context**: Solution context survives server restarts via `.dataverse-mcp` file
+- **Project Context**: The solution context is stored in `.dataverse-mcp`, a project file meant to be committed
 - **Enterprise Governance**: Supports multiple publishers and solutions with proper isolation
 
 ### Solution Workflow
@@ -256,24 +313,29 @@ await use_mcp_tool("dataverse", "set_solution_context", {
   solutionUniqueName: "xyzsolution"
 });
 
-// 4. Create schema objects - they automatically use "xyz" prefix
+// 4. Create schema objects. Read get_solution_context to obtain the publisher prefix.
 await use_mcp_tool("dataverse", "create_dataverse_table", {
-  logicalName: "xyz_project",        // Uses xyz prefix automatically
   displayName: "XYZ Project",
-  displayCollectionName: "XYZ Projects"
+  displayCollectionName: "XYZ Projects",
+  logicalName: "xyz_project",
+  schemaName: "xyz_project",
+  primaryNameDisplayName: "XYZ Project",
+  primaryNameLogicalName: "xyz_projectname",
+  primaryNameSchemaName: "xyz_projectname"
 });
 
 await use_mcp_tool("dataverse", "create_dataverse_column", {
   entityLogicalName: "xyz_project",
-  logicalName: "xyz_description",    // Uses xyz prefix automatically
   displayName: "Description",
+  schemaName: "xyz_description",
+  logicalName: "xyz_description",
   columnType: "Memo"
 });
 ```
 
-### Persistent Solution Context
+### Project Solution Context (`.dataverse-mcp`)
 
-The server automatically persists solution context to a `.dataverse-mcp` file in the project root:
+The solution context lives in a `.dataverse-mcp` file in the working folder. It belongs to the project: commit it, so that every clone and worktree uses the same solution and publisher prefix.
 
 ```json
 {
@@ -281,16 +343,16 @@ The server automatically persists solution context to a `.dataverse-mcp` file in
   "solutionDisplayName": "XYZ Test Solution",
   "publisherUniqueName": "xyzpublisher",
   "publisherDisplayName": "XYZ Test Publisher",
-  "customizationPrefix": "xyz",
-  "lastUpdated": "2025-07-26T08:27:56.966Z"
+  "customizationPrefix": "xyz"
 }
 ```
 
-**Benefits of Persistence:**
-- **No Context Loss**: Solution context survives server restarts
-- **Instant Productivity**: Developers can immediately continue work
-- **Consistent Prefixes**: No need to remember and re-set solution context
-- **Team Isolation**: Each developer can have their own solution context (file is git-ignored)
+- `set_solution_context` creates the file when it does not exist. When it exists, choosing another solution applies to the current session only; pass `saveAsProjectDefault: true` to change the file. The server does not rewrite the file otherwise and stores no timestamps in it.
+- `clear_solution_context` clears the context for the current session; the file stays.
+- `get_solution_context` reports whether the context is the project default or a session override and, when an environment is selected, verifies that the solution exists there and that its publisher prefix matches `customizationPrefix`.
+- The environment is not part of the file: it is chosen per session (see [Environments and sessions](#environments-and-sessions)).
+
+Earlier versions recommended git-ignoring `.dataverse-mcp` and wrote a `lastUpdated` timestamp into it. Existing files keep working; remove the `.gitignore` entry and commit the file to share it.
 
 ## Supported Column Types
 
@@ -303,23 +365,24 @@ The MCP server supports all major Dataverse column types with comprehensive conf
 | **Decimal** | ✅ Implemented | ✅ **Fully Verified** | Decimal numbers with precision | `precision`, `minValue`, `maxValue`, `defaultValue` |
 | **Money** | ✅ Implemented | ✅ **Fully Verified** | Currency values | `precision`, `minValue`, `maxValue` |
 | **Boolean** | ✅ Implemented | ✅ **Fully Verified** | True/false with custom labels | `trueOptionLabel`, `falseOptionLabel`, `defaultValue` |
-| **DateTime** | ✅ Implemented | ✅ **Fully Verified** | Date and time fields | `dateTimeFormat` (DateOnly, DateAndTime) |
+| **DateTime** | ✅ Implemented | ✅ **Fully Verified** | Date and time fields | `dateTimeFormat` (DateOnly, DateAndTime), `dateTimeBehavior` (UserLocal, TimeZoneIndependent, DateOnly) |
 | **Picklist** | ✅ Implemented | ✅ **Fully Verified** | Choice fields (local & global) | `options` (for local), `optionSetName` (for global) |
 | **Lookup** | ✅ Implemented | ✅ **Fully Verified** | References to other tables | `targetEntity` |
-| **Memo** | ✅ Implemented | ✅ **Fully Verified** | Long text fields | `maxLength` |
+| **Memo** | ✅ Implemented | ✅ **Fully Verified** | Long text fields, including rich text | `maxLength`, `memoFormat` (PlainText, RichText) |
 | **Double** | ✅ Implemented | ✅ **Fully Verified** | Floating-point numbers | `precision`, `minValue`, `maxValue` |
 | **BigInt** | ✅ Implemented | ✅ **Fully Verified** | Large integer values | None |
 
 ### Column Type Details
 
 #### String Columns ✅ Fully Tested
-- **Formats**: Email, Text, TextArea, Url, Phone
+- **Formats**: Email, Text, TextArea, Url, TickerSymbol, Phone, Json (`format` on `create_dataverse_column` and `update_dataverse_column`; the stored format is read back and reported)
 - **Max Length**: Configurable (default: 100)
 - **Default Values**: Supported
 - **Example**: Employee name, email address, phone number
 
 #### Integer Columns ✅ Fully Tested
 - **Constraints**: Min/max value validation
+- **Formats**: None, Duration, TimeZone, Language, Locale (`integerFormat`)
 - **Default Values**: Not supported (Dataverse limitation)
 - **Example**: Age, quantity, score with range 0-100
 
@@ -331,7 +394,7 @@ The MCP server supports all major Dataverse column types with comprehensive conf
 #### DateTime Columns ✅ Fully Tested
 - **DateOnly**: Date without time component (e.g., hire date, birthday)
 - **DateAndTime**: Full timestamp with timezone handling (e.g., last login, created date)
-- **Behavior**: Uses UserLocal timezone behavior
+- **Behavior**: Defaults to `UserLocal`; use `TimeZoneIndependent` when an entered time must not be adjusted for each user's time zone.
 
 #### Picklist Columns ✅ Fully Tested
 - **Local Option Sets**: Create inline options with the column
@@ -669,122 +732,170 @@ DATAVERSE_TENANT_ID=common-tenant-id
 ### Creating a Custom Table
 
 ```typescript
-// Create a new custom table with automatic naming
-// The system automatically generates:
-// - Logical Name: xyz_project (using customization prefix from solution context)
-// - Schema Name: xyz_Project (prefix lowercase, original case preserved, spaces removed)
-// - Display Collection Name: Projects (auto-pluralized)
-// - Primary Name Attribute: xyz_project_name
+// Create a new custom table with agent-provided identifiers.
 await use_mcp_tool("dataverse", "create_dataverse_table", {
   displayName: "Project",
+  displayCollectionName: "Projects",
+  logicalName: "xyz_project",
+  schemaName: "xyz_project",
+  primaryNameDisplayName: "Project",
+  primaryNameLogicalName: "xyz_projectname",
+  primaryNameSchemaName: "xyz_projectname",
   description: "Custom table for managing projects",
   ownershipType: "UserOwned",
   hasActivities: true,
   hasNotes: true
 });
 
-// Example with minimal parameters (most common usage)
+// Every schema identifier and the plural display name are explicit.
 await use_mcp_tool("dataverse", "create_dataverse_table", {
-  displayName: "Customer Feedback"
+  displayName: "Customer Feedback",
+  displayCollectionName: "Customer Feedback",
+  logicalName: "xyz_customerfeedback",
+  schemaName: "xyz_customerfeedback",
+  primaryNameDisplayName: "Customer Feedback",
+  primaryNameLogicalName: "xyz_customerfeedbackname",
+  primaryNameSchemaName: "xyz_customerfeedbackname"
 });
-// This creates:
-// - Logical Name: xyz_customerfeedback
-// - Schema Name: xyz_CustomerFeedback (prefix lowercase, original case preserved)
-// - Display Collection Name: Customer Feedbacks
-// - Primary Name Attribute: xyz_customerfeedback_name
 ```
-
+**Important**: Before creating tables, set a solution context and read it with `get_solution_context` to obtain the publisher prefix. The caller applies the prefix and provides every required table identifier explicitly.
 **Important**: Before creating tables, ensure you have set a solution context using `set_solution_context` to provide the customization prefix. The system automatically uses the prefix from the active solution's publisher.
 
 ### Adding Columns to a Table
 
 ```typescript
-// String column with email format and automatic naming
-// The system automatically generates:
-// - Logical Name: xyz_contactemail (prefix + lowercase, no spaces)
-// - Schema Name: xyz_ContactEmail (prefix lowercase, original case preserved)
+// String column with agent-provided names.
+// The caller reads the prefix from get_solution_context and applies its naming convention.
 await use_mcp_tool("dataverse", "create_dataverse_column", {
   entityLogicalName: "xyz_project",
   displayName: "Contact Email",
+  schemaName: "xyz_contactemail",
+  logicalName: "xyz_contactemail",
   columnType: "String",
   format: "Email",
   maxLength: 100,
   requiredLevel: "ApplicationRequired"
 });
 
-// Integer column with constraints (generates xyz_priorityscore)
+// Integer column with constraints
 await use_mcp_tool("dataverse", "create_dataverse_column", {
   entityLogicalName: "xyz_project",
   displayName: "Priority Score",
+  schemaName: "xyz_priorityscore",
+  logicalName: "xyz_priorityscore",
   columnType: "Integer",
   minValue: 1,
   maxValue: 10,
   defaultValue: 5
 });
 
-// Boolean column with custom labels (generates xyz_isactive)
+// Boolean column with custom labels
 await use_mcp_tool("dataverse", "create_dataverse_column", {
   entityLogicalName: "xyz_project",
   displayName: "Is Active",
+  schemaName: "xyz_isactive",
+  logicalName: "xyz_isactive",
   columnType: "Boolean",
   trueOptionLabel: "Active",
   falseOptionLabel: "Inactive",
   defaultValue: true
 });
 
-// DateTime column (date only) (generates xyz_startdate)
+// DateTime column (date only)
 await use_mcp_tool("dataverse", "create_dataverse_column", {
   entityLogicalName: "xyz_project",
   displayName: "Start Date",
+  schemaName: "xyz_startdate",
+  logicalName: "xyz_startdate",
   columnType: "DateTime",
   dateTimeFormat: "DateOnly",
   requiredLevel: "ApplicationRequired"
 });
 
-// DateTime column (date and time) (generates xyz_lastmodified)
+// DateTime column (date and time)
 await use_mcp_tool("dataverse", "create_dataverse_column", {
   entityLogicalName: "xyz_project",
   displayName: "Last Modified",
+  schemaName: "xyz_lastmodifiedon",
+  logicalName: "xyz_lastmodifiedon",
   columnType: "DateTime",
   dateTimeFormat: "DateAndTime"
 });
 
-// Picklist column with local options (generates xyz_status)
+// DateTime column whose entered time is not adjusted for the viewing user's time zone
+await use_mcp_tool("dataverse", "create_dataverse_column", {
+  entityLogicalName: "xyz_project",
+  displayName: "Venue Opens On",
+  schemaName: "xyz_venueopenson",
+  logicalName: "xyz_venueopenson",
+  columnType: "DateTime",
+  dateTimeBehavior: "TimeZoneIndependent",
+  dateTimeFormat: "DateAndTime"
+});
+
+// Picklist column with local options
 await use_mcp_tool("dataverse", "create_dataverse_column", {
   entityLogicalName: "xyz_project",
   displayName: "Status",
+  schemaName: "xyz_statuscode",
+  logicalName: "xyz_statuscode",
   columnType: "Picklist",
   options: [
     { value: 1, label: "Planning" },
     { value: 2, label: "In Progress" },
     { value: 3, label: "On Hold" },
     { value: 4, label: "Completed" }
-  ]
+  ],
+  defaultOptionValue: 1
 });
 
-// Picklist column using global option set (generates xyz_projectcolor)
+// Picklist column using global option set
 await use_mcp_tool("dataverse", "create_dataverse_column", {
   entityLogicalName: "xyz_project",
   displayName: "Project Color",
+  schemaName: "xyz_projectcolorcode",
+  logicalName: "xyz_projectcolorcode",
   columnType: "Picklist",
   optionSetName: "xyz_colors"
 });
 
-// Lookup column (generates xyz_account)
+// Lookup column
 await use_mcp_tool("dataverse", "create_dataverse_column", {
   entityLogicalName: "xyz_project",
   displayName: "Account",
+  schemaName: "xyz_accountid",
+  logicalName: "xyz_accountid",
   columnType: "Lookup",
   targetEntity: "account"
 });
 
-// Memo column for long text (generates xyz_description)
+// Memo column for long text
 await use_mcp_tool("dataverse", "create_dataverse_column", {
   entityLogicalName: "xyz_project",
   displayName: "Description",
+  schemaName: "xyz_description",
+  logicalName: "xyz_description",
   columnType: "Memo",
   maxLength: 2000,
   requiredLevel: "Recommended"
+});
+
+// Rich-text Memo column. Dataverse stores formatted HTML in this field.
+await use_mcp_tool("dataverse", "create_dataverse_column", {
+  entityLogicalName: "xyz_project",
+  displayName: "Formatted Notes",
+  schemaName: "xyz_formattednotes",
+  logicalName: "xyz_formattednotes",
+  columnType: "Memo",
+  memoFormat: "RichText",
+  maxLength: 10000
+});
+
+// Convert an existing Memo column to rich text.
+await use_mcp_tool("dataverse", "update_dataverse_column", {
+  entityLogicalName: "xyz_project",
+  logicalName: "xyz_description",
+  memoFormat: "RichText"
 });
 ```
 
@@ -797,6 +908,8 @@ AutoNumber columns automatically generate unique alphanumeric strings using cust
 await use_mcp_tool("dataverse", "create_autonumber_column", {
   entityLogicalName: "xyz_project",
   displayName: "Project Number",
+  schemaName: "xyz_projectno",
+  logicalName: "xyz_projectno",
   autoNumberFormat: "PRJ-{SEQNUM:5}",
   maxLength: 20,
   requiredLevel: "SystemRequired"
@@ -807,6 +920,8 @@ await use_mcp_tool("dataverse", "create_autonumber_column", {
 await use_mcp_tool("dataverse", "create_autonumber_column", {
   entityLogicalName: "xyz_invoice",
   displayName: "Invoice Reference",
+  schemaName: "xyz_invoiceno",
+  logicalName: "xyz_invoiceno",
   autoNumberFormat: "INV-{DATETIMEUTC:yyyyMMdd}-{RANDSTRING:4}",
   maxLength: 30,
   description: "Auto-generated invoice reference number"
@@ -817,6 +932,8 @@ await use_mcp_tool("dataverse", "create_autonumber_column", {
 await use_mcp_tool("dataverse", "create_autonumber_column", {
   entityLogicalName: "xyz_order",
   displayName: "Order Code",
+  schemaName: "xyz_orderno",
+  logicalName: "xyz_orderno",
   autoNumberFormat: "ORD-{DATETIMEUTC:yyyy}-{SEQNUM:4}-{RANDSTRING:2}",
   maxLength: 25,
   requiredLevel: "ApplicationRequired"
@@ -909,6 +1026,12 @@ You can create tables with AutoNumber primary name columns directly:
 // Create a table with AutoNumber primary name
 await use_mcp_tool("dataverse", "create_dataverse_table", {
   displayName: "Support Ticket",
+  displayCollectionName: "Support Tickets",
+  logicalName: "xyz_supportticket",
+  schemaName: "xyz_supportticket",
+  primaryNameDisplayName: "Support Ticket #",
+  primaryNameLogicalName: "xyz_supportticketno",
+  primaryNameSchemaName: "xyz_supportticketno",
   description: "Customer support tickets with auto-generated ticket numbers",
   primaryNameAutoNumberFormat: "TICKET-{DATETIMEUTC:yyyyMM}-{SEQNUM:4}",
   hasActivities: true,
@@ -919,6 +1042,12 @@ await use_mcp_tool("dataverse", "create_dataverse_table", {
 // Create a project table with year-based numbering
 await use_mcp_tool("dataverse", "create_dataverse_table", {
   displayName: "Project",
+  displayCollectionName: "Projects",
+  logicalName: "xyz_project",
+  schemaName: "xyz_project",
+  primaryNameDisplayName: "Project #",
+  primaryNameLogicalName: "xyz_projectno",
+  primaryNameSchemaName: "xyz_projectno",
   description: "Projects with auto-generated project codes",
   primaryNameAutoNumberFormat: "PRJ-{DATETIMEUTC:yyyy}-{SEQNUM:5}",
   ownershipType: "UserOwned"
@@ -962,6 +1091,7 @@ await use_mcp_tool("dataverse", "create_dataverse_relationship", {
   referencedEntity: "account",
   referencingEntity: "new_project",
   referencingAttributeLogicalName: "new_accountid",
+  referencingAttributeSchemaName: "new_accountid",
   referencingAttributeDisplayName: "Account",
   cascadeDelete: "RemoveLink"
 });
@@ -1169,6 +1299,88 @@ await use_mcp_tool("dataverse", "delete_dataverse_businessunit", {
   businessUnitId: "business-unit-guid-here"
 });
 ```
+
+### Creating a Business Process Flow
+
+Enable the table first (one-way), then create the process from a compact definition. Stage references (`nextStage`, branch targets, `elseStage`, `relationship.sourceStage`) use stage names, or stage ids when names repeat. `nextStage` defaults to the next stage in the list; set it explicitly for stages that sit on a side path and rejoin the main path later.
+
+```json
+// 1. Enable the table for business process flows
+{
+  "logicalName": "ddsol_svc_case",
+  "isBusinessProcessEnabled": true
+}
+
+// 2. create_business_process_flow
+{
+  "name": "Case Resolution Process",
+  "uniqueName": "ddsol_caseresolutionprocess",
+  "primaryEntity": "ddsol_svc_case",
+  "processOrder": 100,
+  "definition": {
+    "segments": [
+      {
+        "entity": "ddsol_svc_case",
+        "stages": [
+          {
+            "name": "New",
+            "category": "Identify",
+            "steps": [{ "column": "ddsol_bpfcheck_issubmissioncomplete", "required": true }]
+          },
+          {
+            "name": "Key User Review",
+            "category": "Qualify",
+            "nextStage": "Customer Review",
+            "steps": [{ "column": "ddsol_responsiblepartycode" }],
+            "branches": [
+              { "column": "ddsol_responsiblepartycode", "value": 275040000, "nextStage": "Resolution", "label": "IF Handled by Customer" }
+            ],
+            "elseStage": "Issue Resolution"
+          },
+          {
+            "name": "Resolution",
+            "category": "Resolve",
+            "nextStage": "Customer Review",
+            "steps": [{ "column": "ddsol_resolution" }, { "column": "ddsol_resolutioncategorycode", "required": true }]
+          }
+        ]
+      },
+      {
+        "entity": "msdyn_projectissue",
+        "stages": [
+          {
+            "name": "Issue Resolution",
+            "category": "Resolve",
+            "nextStage": "Customer Review",
+            "relationship": {
+              "sourceStage": "Key User Review",
+              "relationshipName": "ddsol_msdyn_projectissue_sourcecaseid_ddsol_svc_case",
+              "attributeName": "ddsol_sourcecaseid"
+            },
+            "steps": [{ "column": "ddsol_bpfstagecode", "label": "Issue BPF Stage", "required": true }]
+          }
+        ]
+      },
+      {
+        "entity": "ddsol_svc_case",
+        "stages": [
+          { "name": "Customer Review", "category": "Approval", "steps": [{ "column": "ddsol_reviewresultcode" }] },
+          { "name": "Closure", "category": "Close", "steps": [{ "column": "statuscode" }] }
+        ]
+      }
+    ]
+  }
+}
+
+// 3. activate_business_process_flow → generates table ddsol_caseresolutionprocess (processstage rows exist since the create)
+{ "workflowId": "<workflowid returned by create>" }
+
+// 4. grant_table_privileges on ddsol_caseresolutionprocess for every role that runs the process
+
+// Later: deactivate_business_process_flow → update_business_process_flow (definition or xaml) → activate_business_process_flow
+```
+
+Step `type`/`controlDisplayName` and branch `valueType` are looked up from the column metadata; pass them yourself (or `classId`) with `resolveColumnsFromMetadata: false` when working offline. `build_business_process_flow_xaml` returns the generated XAML without writing anything, and `get_business_process_flow` returns the stored XAML of an existing process so it can be cloned.
 
 ### Exporting Solution Schema
 
@@ -2031,21 +2243,89 @@ This workflow ensures your PowerPages Code Site is properly configured to handle
 
 ## Authentication
 
-The server uses **Client Credentials flow** (Server-to-Server authentication) with Azure AD. This provides:
+The server supports two modes, chosen with `DATAVERSE_AUTH_MODE`. Without a client secret the default is `device`.
 
-- Secure authentication without user interaction
-- Application-level permissions
-- Suitable for automated scenarios
-- Token refresh handling
+### Device-code sign-in (`device`)
+
+Configure `DATAVERSE_CLIENT_ID` (an app registration that allows public client flows), optionally `DATAVERSE_TENANT_ID` (default `organizations`, the signing-in user's home tenant) and optionally `DATAVERSE_URL`.
+
+**Signing in.** When a tool needs a token and none is cached, it returns:
+
+```
+Sign-in required to continue.
+
+Open this URL: https://login.microsoft.com/device
+Enter code: ABCD12345
+
+(A browser window was opened automatically and the code was copied to your clipboard.)
+
+Run this tool again after completing sign-in.
+```
+
+Complete the sign-in within 15 minutes, then run the tool again. A call that finds a sign-in in progress keeps checking with Microsoft Entra for up to 20 seconds before reporting it as still pending; the repeated prompt shows when the code expires and what the last check returned.
+
+**One sign-in covers everything.** Microsoft Entra refresh tokens belong to the user and the app, not to one resource. After one sign-in the server obtains tokens silently for the Global Discovery Service (`list_dataverse_environments`) and for every environment you can access in the tenant. A new sign-in is needed only when Entra refuses: the refresh token was revoked or expired (for example after a password reset, or 90 days without use), a Conditional Access policy requires a fresh sign-in for an environment, or the environment belongs to another tenant. Cached tokens of different accounts are never mixed; you are asked to sign in instead.
+
+**Where tokens are cached.** One file per resource in `%LOCALAPPDATA%` (Windows) or `$HOME` (macOS, Linux), named `dataverse-mcp-auth-<hex of tenant:clientId:resource>.json`. The Global Discovery token uses the resource `https://globaldisco.crm.dynamics.com`. Files are written atomically and, on macOS and Linux, are readable only by you. Sign-ins in progress are stored next to them as `dataverse-mcp-pending-<hash>.json`, named by tenant, client and scope, so servers with different configurations never share one. Delete these files to sign out.
+
+**When sign-in fails,** the error is reported instead of the code being shown again:
+
+```
+Sign-in failed: Microsoft Entra did not issue a token for https://contoso.api.crm4.dynamics.com.
+error: invalid_grant
+error_description: AADSTS53003: Access has been blocked by Conditional Access policies. ...
+error_codes: 53003
+correlation_id: 00000000-0000-0000-0000-000000000000
+trace_id: 00000000-0000-0000-0000-000000000000
+timestamp: 2026-01-01 00:00:00Z
+The sign-in code was discarded. Resolve the cause above, then run the tool again to get a new code.
+```
+
+- `authorization_pending` and `slow_down` keep the code (`slow_down` adds 5 seconds to the polling interval).
+- `expired_token` and `bad_verification_code` issue a new code, and the prompt says why.
+- `authorization_declined` and every other Entra error discard the code and are reported as above.
+- Network errors and timeouts keep the code and are reported as such; every authentication call times out after 30 seconds.
+- A cached sign-in that cannot be refreshed because of a network problem is kept. One that Entra rejects is discarded, and the new prompt states the reason.
+
+Each check is also logged to stderr on one line, without codes or tokens. Because some MCP clients do not keep a server's stderr, **`get_dataverse_auth_status`** reports the same information on demand: cached sign-ins and their expiry, sign-ins in progress with their code, expiry and last check result, and recent errors. It never shows tokens.
+
+### Client credentials (`client_secret`)
+
+Server-to-server authentication with a client secret: set `DATAVERSE_CLIENT_ID`, `DATAVERSE_CLIENT_SECRET`, `DATAVERSE_TENANT_ID` and `DATAVERSE_URL` (see [Setup](#setup)). There is no user interaction; the application user needs a security role in the environment. `list_dataverse_environments` still needs a device sign-in, because the Global Discovery Service lists environments per user.
+
+### Environments and sessions
+
+The environment is chosen per session. A new server process starts without one, unless `DATAVERSE_URL` is set, and tools answer `No Dataverse environment is selected for this session...` until `set_dataverse_environment` is called, so confirm the environment with the user at the start of each session. The environment last used in a working folder is remembered only as a suggestion, shown in that message and by `get_active_dataverse_environment`; it is never selected automatically.
+
+Environment URLs are normalised to their origin: `https://Contoso.api.crm4.dynamics.com/api/data/v9.2/` and `https://contoso.api.crm4.dynamics.com` are the same environment. Both the API URL (`https://<org>.api.<region>.dynamics.com`) and the browser URL (`https://<org>.<region>.dynamics.com`) work; each has its own token cache entry.
+
+### State directory
+
+`DATAVERSE_MCP_STATE_DIR` (optional) is where the server keeps per-folder state outside your repositories, currently the last-used environment suggestion, in one subdirectory per working folder. Default: `%LOCALAPPDATA%\dataverse-mcp` on Windows, otherwise `$XDG_STATE_HOME/dataverse-mcp` or `~/.local/state/dataverse-mcp`. The Claude Code plugin will set it to its plugin data directory.
+
+Earlier versions wrote `.dataverse-mcp-environment.json` and `.dataverse-mcp-pending-*.json` into the working folder. On start these are migrated (the environment becomes the folder's suggestion) and removed.
 
 ## Error Handling
 
-The server includes comprehensive error handling:
+Dataverse errors keep their familiar first line, followed by every detail Dataverse returns:
 
-- **Authentication errors** - Invalid credentials or expired tokens
-- **API errors** - Dataverse-specific error messages with codes
-- **Validation errors** - Parameter validation and type checking
-- **Network errors** - Connection and timeout handling
+```
+Dataverse API Error: An unexpected error occurred. (Code: 0x80040216)
+Inner error: ...
+ErrorDetails.OperationStatus: 0
+ErrorDetails.SubErrorCode: -2146233088
+HelpLink: http://go.microsoft.com/fwlink/?LinkID=398563&error=Microsoft.Crm.CrmException%3a80040216&client=platform
+InnerError.Message: ...
+HTTP status: 500 Internal Server Error
+x-ms-service-request-id: 00000000-0000-0000-0000-000000000000
+```
+
+- The first line is unchanged, so anything that parses it keeps working.
+- Write requests ask Dataverse for its error-detail annotations (`Prefer: odata.include-annotations="Microsoft.PowerApps.CDS.ErrorDetails*,..."`), which it only returns on request; successful responses are unaffected.
+- Each field is truncated to 2,000 characters. Request bodies and headers, other than the request ID, are never included.
+- Failures without a Dataverse error body read `Dataverse request failed with HTTP <status>.`, `Dataverse request failed: <network error>` or `Dataverse request timed out`.
+- A read that fails with "does not exist" (`0x80040217` or `0x80060888`) within a minute of a write is retried once after 3 seconds, because new components can take a moment to become visible.
+- Sign-in errors are described under [Authentication](#authentication).
 
 ## Security Considerations
 
@@ -2141,14 +2421,7 @@ await use_mcp_tool("dataverse", "clear_solution_context", {});
 
 ### Git Integration
 
-The `.dataverse-mcp` file is automatically excluded from version control:
-
-```gitignore
-# MCP Dataverse context file
-.dataverse-mcp
-```
-
-This allows each developer to maintain their own solution context while preventing accidental sharing of environment-specific settings.
+Commit `.dataverse-mcp`: it names the project's solution and publisher prefix and contains no secrets, environment URLs or timestamps. Nothing else the server writes lives in the repository: tokens and sign-ins in progress are kept in the user's token cache, and the last-used environment suggestion in `DATAVERSE_MCP_STATE_DIR`.
 
 ## Developer Notebook
 

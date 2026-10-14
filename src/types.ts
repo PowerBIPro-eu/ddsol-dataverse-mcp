@@ -25,6 +25,7 @@ export interface EntityMetadata {
   IsReadOnlyInMobileClient: boolean;
   IsVisibleInMobile: boolean;
   IsVisibleInMobileClient: boolean;
+  IsQuickCreateEnabled: boolean;
   IsAuditEnabled: boolean;
   IsReplicateable: boolean;
   IsDuplicateDetectionEnabled: boolean;
@@ -37,6 +38,8 @@ export interface EntityMetadata {
   CanBeInManyToMany: boolean;
   CanEnableSyncToExternalSearchIndex: boolean;
   SyncToExternalSearchIndex: boolean;
+  IsBusinessProcessEnabled?: boolean;
+  IsBPFEntity?: boolean;
   ChangeTrackingEnabled: boolean;
   CollectionSchemaName: string;
   ExternalCollectionName?: string;

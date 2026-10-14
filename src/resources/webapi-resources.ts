@@ -383,8 +383,8 @@ export function registerWebAPIResources(server: McpServer, client: DataverseClie
     },
     async (uri, params) => {
       // Debug logging to see what we're receiving
-      console.log('WebAPI Resource called with URI:', uri.href);
-      console.log('WebAPI Resource params:', JSON.stringify(params, null, 2));
+      console.error('WebAPI Resource called with URI:', uri.href);
+      console.error('WebAPI Resource params:', JSON.stringify(params, null, 2));
       
       // Extract parameters from the URI template
       const { operation, entitySetName, entityId } = params || {};
@@ -401,7 +401,7 @@ export function registerWebAPIResources(server: McpServer, client: DataverseClie
         const manualEntity = uriParts[1];
         const manualId = uriParts[2];
         
-        console.log('Manual parsing:', { manualOp, manualEntity, manualId });
+        console.error('Manual parsing:', { manualOp, manualEntity, manualId });
         
         const codeExamples = generateWebAPIExamples(client, manualOp, manualEntity, manualId);
         return {

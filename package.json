@@ -1,18 +1,40 @@
 {
-  "name": "dataverse-mcp-server",
-  "version": "0.2.8",
+  "name": "@powerbipro-eu/dataverse-mcp-server",
+  "version": "0.2.43",
   "description": "MCP server for Dataverse schema operations",
   "type": "module",
   "main": "build/index.js",
+  "bin": {
+    "dataverse-mcp-server": "build/index.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/PowerBIPro-eu/ddsol-dataverse-mcp.git"
+  },
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com"
+  },
+  "files": [
+    "build/",
+    "LICENSE",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
   "scripts": {
+    "prebuild": "node -e \"require('fs').rmSync('build', { recursive: true, force: true })\"",
     "build": "tsc && node -e \"require('fs').chmodSync('build/index.js', '755')\"",
     "dev": "tsc --watch",
     "start": "node build/index.js",
-    "test:server": "node test-server.cjs",
-    "test:auth": "node test-auth.cjs",
-    "release": "npm run build && npm version patch && git push && git push --tags",
-    "release:minor": "npm run build && npm version minor && git push && git push --tags",
-    "release:major": "npm run build && npm version major && git push && git push --tags"
+    "test": "npm run build && node test/unit/run.mjs",
+    "test:unit": "node test/unit/run.mjs",
+    "test:bpf-xaml": "node test/test-bpf-xaml-roundtrip.mjs",
+    "test:server": "node test/test-server.cjs",
+    "test:auth": "node test/test-auth.cjs",
+    "release": "npm run build && npm version patch && npm publish && git push && git push --tags",
+    "release:minor": "npm run build && npm version minor && npm publish && git push && git push --tags",
+    "release:major": "npm run build && npm version major && npm publish && git push && git push --tags"
   },
   "keywords": [
     "mcp",
@@ -24,10 +46,8 @@
   "license": "MIT",
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.17.0",
-    "@types/dotenv": "^8.2.3",
     "@types/js-yaml": "^4.0.9",
     "axios": "^1.6.0",
-    "dotenv": "^16.6.1",
     "js-yaml": "^4.1.0",
     "zod": "^3.22.0"
   },
