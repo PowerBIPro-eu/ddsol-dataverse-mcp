@@ -32,9 +32,9 @@
     "test:bpf-xaml": "node test/test-bpf-xaml-roundtrip.mjs",
     "test:server": "node test/test-server.cjs",
     "test:auth": "node test/test-auth.cjs",
-    "release": "npm run build && npm version patch && npm publish && git push && git push --tags",
-    "release:minor": "npm run build && npm version minor && npm publish && git push && git push --tags",
-    "release:major": "npm run build && npm version major && npm publish && git push && git push --tags"
+    "release": "npm run build && npm version patch && git push && git push --tags",
+    "release:minor": "npm run build && npm version minor && git push && git push --tags",
+    "release:major": "npm run build && npm version major && git push && git push --tags"
   },
   "keywords": [
     "mcp",

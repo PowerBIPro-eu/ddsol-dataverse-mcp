@@ -4,31 +4,64 @@ on:
   push:
     tags:
       - 'v*'
+  workflow_dispatch:
 
 permissions:
   contents: write
   packages: write
 
 jobs:
-  release:
+  publish:
+    name: Publish to GitHub Packages
     runs-on: ubuntu-latest
-    
+    env:
+      NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
-      
+
     - name: Setup Node.js
       uses: actions/setup-node@v4
       with:
-        node-version: '18'
+        node-version: '20'
         cache: 'npm'
-        
+        registry-url: 'https://npm.pkg.github.com'
+        scope: '@powerbipro-eu'
+
     - name: Install dependencies
       run: npm ci
-      
+
     - name: Build project
       run: npm run build
-      
+
+    - name: Run unit tests
+      run: npm run test:unit
+
+    - name: Publish to GitHub Packages
+      run: npm publish --access public
+
+  release:
+    name: Create GitHub Release
+    needs: publish
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20'
+        cache: 'npm'
+
+    - name: Install dependencies
+      run: npm ci
+
+    - name: Build project
+      run: npm run build
+
     - name: Create release archive
       run: |
         mkdir -p release
@@ -42,7 +75,7 @@ jobs:
         tar -czf ../dataverse-mcp-${{ github.ref_name }}.tar.gz .
         cd ..
         zip -r dataverse-mcp-${{ github.ref_name }}.zip release/
-        
+
     - name: Create GitHub Release
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -53,22 +86,27 @@ jobs:
         else
           PRERELEASE="--prerelease"
         fi
-        
+
+        VERSION="${{ github.ref_name }}"
+        VERSION="${VERSION#v}"
+
         # Create release notes
-        cat > release_notes.md << 'EOF'
+        cat > release_notes.md << EOF_NOTES
         Release ${{ github.ref_name }}
-        
+
         ## Installation
-        
-        1. Download and extract the archive
-        2. Run `npm install` in the extracted directory
-        3. Configure your MCP settings with the path to `build/index.js`
-        
+
+        The package is published to GitHub Packages as \`@powerbipro-eu/dataverse-mcp-server@${VERSION}\`;
+        an MCP client starts it with \`npx -y @powerbipro-eu/dataverse-mcp-server@${VERSION}\`.
+        The archives below hold the built server for a manual installation (run \`npm install\` in the
+        extracted directory and point the MCP configuration at \`build/index.js\`).
+
         ## What's Changed
-        
-        See the [README](https://github.com/mwhesse/dataverse-mcp/blob/main/README.md) for full documentation.
-        EOF
-        
+
+        See [CHANGELOG.md](https://github.com/PowerBIPro-eu/ddsol-dataverse-mcp/blob/main/CHANGELOG.md)
+        and the [README](https://github.com/PowerBIPro-eu/ddsol-dataverse-mcp/blob/main/README.md).
+        EOF_NOTES
+
         # Create the release
         gh release create ${{ github.ref_name }} \
           --title "${{ github.ref_name }}" \
