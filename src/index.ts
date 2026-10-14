@@ -147,6 +147,17 @@ import {
   publishDataverseCustomizationsTool
 } from "./tools/publish-tools.js";
 import {
+  createBusinessProcessFlowTool,
+  getBusinessProcessFlowTool,
+  listBusinessProcessFlowsTool,
+  updateBusinessProcessFlowTool,
+  activateBusinessProcessFlowTool,
+  deactivateBusinessProcessFlowTool,
+  deleteBusinessProcessFlowTool,
+  listBusinessProcessFlowStagesTool,
+  buildBusinessProcessFlowXamlTool
+} from "./tools/bpf-tools.js";
+import {
   createDataverseRecordTool,
   createDataverseRecordsTool,
   updateDataverseRecordsTool,
@@ -368,6 +379,17 @@ deleteChartTool(server, dataverseClient);
 
 // Register publish tool
 publishDataverseCustomizationsTool(server, dataverseClient);
+
+// Register business process flow tools
+createBusinessProcessFlowTool(server, dataverseClient);
+getBusinessProcessFlowTool(server, dataverseClient);
+listBusinessProcessFlowsTool(server, dataverseClient);
+updateBusinessProcessFlowTool(server, dataverseClient);
+activateBusinessProcessFlowTool(server, dataverseClient);
+deactivateBusinessProcessFlowTool(server, dataverseClient);
+deleteBusinessProcessFlowTool(server, dataverseClient);
+listBusinessProcessFlowStagesTool(server, dataverseClient);
+buildBusinessProcessFlowXamlTool(server, dataverseClient);
 
 // Register record tools
 createDataverseRecordTool(server, dataverseClient);

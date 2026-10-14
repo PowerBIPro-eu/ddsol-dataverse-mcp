@@ -38,6 +38,8 @@ export interface EntityMetadata {
   CanBeInManyToMany: boolean;
   CanEnableSyncToExternalSearchIndex: boolean;
   SyncToExternalSearchIndex: boolean;
+  IsBusinessProcessEnabled?: boolean;
+  IsBPFEntity?: boolean;
   ChangeTrackingEnabled: boolean;
   CollectionSchemaName: string;
   ExternalCollectionName?: string;

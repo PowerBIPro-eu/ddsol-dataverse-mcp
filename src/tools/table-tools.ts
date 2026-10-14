@@ -84,6 +84,7 @@ export function createTableTool(server: McpServer, client: DataverseClient) {
         isDocumentManagementEnabled: z.boolean().optional().describe("Whether document management is enabled (omit to keep the Dataverse default)"),
         isQuickCreateEnabled: z.boolean().default(false).describe("Whether the table is enabled for quick create forms when Dataverse supports quick create for the table"),
         changeTrackingEnabled: z.boolean().default(false).describe("Whether Dataverse change tracking is enabled for the table"),
+        isBusinessProcessEnabled: z.boolean().default(false).describe("Whether business process flows can target this table (IsBusinessProcessEnabled). One-way: once enabled it cannot be disabled."),
         primaryNameDisplayName: z.string().describe("Display name of the primary name attribute"),
         primaryNameLogicalName: z.string().describe("Complete logical name of the primary name attribute"),
         primaryNameSchemaName: z.string().describe("Complete schema name of the primary name attribute. Must exactly match primaryNameLogicalName."),
@@ -110,6 +111,7 @@ export function createTableTool(server: McpServer, client: DataverseClient) {
           HasNotes: params.hasNotes,
           IsQuickCreateEnabled: params.isQuickCreateEnabled,
           ChangeTrackingEnabled: params.changeTrackingEnabled,
+          IsBusinessProcessEnabled: params.isBusinessProcessEnabled,
           IsActivity: false,
           IsCustomEntity: true,
           Attributes: [
@@ -228,7 +230,8 @@ export function updateTableTool(server: McpServer, client: DataverseClient) {
         isMailMergeEnabled: z.boolean().optional().describe("Whether mail merge is enabled"),
         isDocumentManagementEnabled: z.boolean().optional().describe("Whether document management is enabled"),
         isQuickCreateEnabled: z.boolean().optional().describe("Whether the table is enabled for quick create forms when Dataverse supports quick create for the table"),
-        changeTrackingEnabled: z.boolean().optional().describe("Whether Dataverse change tracking is enabled for the table")
+        changeTrackingEnabled: z.boolean().optional().describe("Whether Dataverse change tracking is enabled for the table"),
+        isBusinessProcessEnabled: z.boolean().optional().describe("Enable the table for business process flows (IsBusinessProcessEnabled). One-way: once enabled it cannot be disabled, so false is rejected for an enabled table.")
       }
     },
     async (params) => {
@@ -303,6 +306,12 @@ export function updateTableTool(server: McpServer, client: DataverseClient) {
         }
         if (params.changeTrackingEnabled !== undefined) {
           updatedEntity.ChangeTrackingEnabled = params.changeTrackingEnabled;
+        }
+        if (params.isBusinessProcessEnabled !== undefined) {
+          if (!params.isBusinessProcessEnabled && currentEntity.IsBusinessProcessEnabled) {
+            throw new Error(`Table '${params.logicalName}' is already enabled for business process flows; IsBusinessProcessEnabled is a one-way flag and cannot be set back to false.`);
+          }
+          updatedEntity.IsBusinessProcessEnabled = params.isBusinessProcessEnabled;
         }
 
         // Use PUT method with MSCRM.MergeLabels header as per Microsoft documentation

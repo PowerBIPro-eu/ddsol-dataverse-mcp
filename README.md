@@ -45,6 +45,7 @@ A Model Context Protocol (MCP) server for Microsoft Dataverse that enables schem
   - [Team Operations](#team-operations)
   - [Business Unit Operations](#business-unit-operations)
   - [Schema Export Operations](#schema-export-operations)
+  - [Business Process Flow Operations](#business-process-flow-operations)
   - [View Grid Control Operations](#view-grid-control-operations)
   - [WebAPI Call Generator](#webapi-call-generator)
   - [PowerPages WebAPI Generator](#powerpages-webapi-generator)
@@ -80,6 +81,7 @@ A Model Context Protocol (MCP) server for Microsoft Dataverse that enables schem
   - [Managing Security Roles](#managing-security-roles)
   - [Managing Teams](#managing-teams)
   - [Managing Business Units](#managing-business-units)
+  - [Creating a Business Process Flow](#creating-a-business-process-flow)
   - [Exporting Solution Schema](#exporting-solution-schema)
   - [Mermaid Diagram Generation](#mermaid-diagram-generation)
   - [WebAPI Call Generator](#webapi-call-generator)
@@ -122,9 +124,9 @@ A Model Context Protocol (MCP) server for Microsoft Dataverse that enables schem
 This MCP server provides comprehensive tools for Dataverse schema management:
 
 ### Table Operations
-- **create_dataverse_table** ✅ **Fully Tested** - **Create Dataverse Table**: Creates a new custom table in Dataverse with the specified configuration. The caller must provide complete table and primary-name identifiers plus the plural display name. Requires a solution context to be set first.
+- **create_dataverse_table** ✅ **Fully Tested** - **Create Dataverse Table**: Creates a new custom table in Dataverse with the specified configuration. The caller must provide complete table and primary-name identifiers plus the plural display name. `isBusinessProcessEnabled` enables the table for business process flows (one-way). Requires a solution context to be set first.
 - **get_dataverse_table** ✅ **Fully Tested** - **Get Dataverse Table**: Retrieves detailed information about a specific Dataverse table including its metadata, properties, and configuration. Use this to inspect table definitions and understand table structure.
-- **update_dataverse_table** ✅ **Fully Tested** - **Update Dataverse Table**: Updates the properties and configuration of an existing Dataverse table. Use this to modify table settings like display names, descriptions, or feature enablement (activities, notes, auditing, etc.). Changes are published automatically.
+- **update_dataverse_table** ✅ **Fully Tested** - **Update Dataverse Table**: Updates the properties and configuration of an existing Dataverse table. Use this to modify table settings like display names, descriptions, or feature enablement (activities, notes, auditing, business process flows via the one-way `isBusinessProcessEnabled`, etc.). Changes are published automatically.
 - **delete_dataverse_table** ✅ **Fully Tested** - **Delete Dataverse Table**: Permanently deletes a custom table from Dataverse. WARNING: This action cannot be undone and will remove all data in the table. Use with extreme caution and only for tables that are no longer needed.
 - **list_dataverse_tables** ✅ **Fully Tested** - **List Dataverse Tables**: Retrieves a list of tables in the Dataverse environment with filtering options. Use this to discover available tables, find custom tables, or get an overview of the data model. Supports filtering by custom/system tables and managed/unmanaged status.
 
@@ -238,6 +240,21 @@ This MCP server provides comprehensive tools for Dataverse schema management:
 - **delete_dataverse_records** - **Delete Dataverse Records**: Deletes up to 25 identified records in one explicit entity set. A successful Dataverse delete response confirms each deletion. Requires `confirmDelete: true`; deletion cannot be undone.
 
 Bulk tools process records sequentially. If a batch fails partway through, the error response includes the records confirmed as completed before the failure so callers can reconcile the partial result.
+
+### Business Process Flow Operations
+- **create_business_process_flow** - **Create Business Process Flow**: Creates a BPF definition as a Draft `workflow` row (category 4, type 1, scope Organization) from either a compact JSON `definition` (entity segments → stages → steps/branches; column types and display names are resolved from the table metadata) or complete BPF `xaml`. Checks that the unique name starts with the solution's customization prefix, that the primary table is BPF-enabled and that the unique name is free, embeds the `workflowid` in the XAML `x:Class`, sends the `MSCRM.SolutionUniqueName` header and adds the process (component type 29) to the solution context.
+- **get_business_process_flow** - **Get Business Process Flow**: Retrieves a process by `workflowid` or unique name with its XAML, state, primary entity and process order, plus a stage/step/branch summary parsed from the XAML.
+- **list_business_process_flows** - **List Business Process Flows**: Lists BPF definitions (`category eq 4 and type eq 1`), optionally filtered by primary table and managed state.
+- **update_business_process_flow** - **Update Business Process Flow**: Updates name, description, process order or the definition (`xaml` or compact `definition`). Definition changes need Draft state: the tool refuses them on an active process and tells you to deactivate first; the XAML class is rewritten to the target `workflowid`.
+- **activate_business_process_flow** - **Activate Business Process Flow**: Sets statecode 1 / statuscode 2. Dataverse then generates the BPF table named after the unique name (the `processstage` rows already exist from the saved definition); the tool reads the generated table back (`EntityDefinitions` with `IsBPFEntity eq true`, polling up to 90 s because table metadata can lag behind the activation) and reminds you that only System Administrator and System Customizer get privileges on it (use `grant_table_privileges` for the other roles).
+- **deactivate_business_process_flow** - **Deactivate Business Process Flow**: Sets the process back to Draft (statecode 0 / statuscode 1) so it can be edited or deleted.
+- **delete_business_process_flow** - **Delete Business Process Flow**: Deletes a Draft process (requires `confirmDelete: true`); Dataverse removes the generated BPF table with it.
+- **list_business_process_flow_stages** - **List Business Process Flow Stages**: Lists the `processstage` rows of a process (`stagename`, `stagecategory`, `primaryentitytypecode`), ordered like the definition when the XAML can be read.
+- **build_business_process_flow_xaml** - **Build Business Process Flow XAML**: Deterministically generates the full BPF XAML from the compact definition without writing anything; returns the XAML, the embedded `workflowid` and the generated stage ids.
+
+A table must be enabled for business process flows before a process can target it: pass `isBusinessProcessEnabled: true` to `create_dataverse_table` or `update_dataverse_table`. The flag is one-way; Dataverse never lets you switch it off again, so the update tool rejects `false` on an enabled table.
+
+The XAML generator mirrors real solution exports exactly (one `EntityComposite` per stage, `StageComposite`/`StepComposite`/`mcwb:Control`, `StageRelationshipCollectionComposite` for cross-table transitions, `ConditionSequence` branches with `mcwc:SetNextStage`); `test/test-bpf-xaml-roundtrip.mjs` rebuilds exported processes byte-for-byte. Control ClassIds confirmed in BPF exports: boolean `67fac785-…`, choice `3ef39988-…`, status reason `5d68b988-…`, lookup `270bd3db-…`, text `4273edbd-…`, multiline text `e0dece4b-…`, whole number `c6d124ca-…`, decimal `c3efe0c3-…`, date `5b773807-…`; money and URL come from the FormXML control table and are flagged with a warning. Other column types need an explicit `classId` on the step. Limits enforced from the Microsoft docs: at most 5 tables, 30 stages per table and 30 steps per stage. Branch conditions support `Equal`, `NotEqual`, `GreaterThan`, `GreaterEqual`, `LessThan`, `LessEqual`, `Contains` and `DoesNotContain` against a choice, status, state, boolean, number or text literal, or against another column (`compareToColumn`); `Null`/`NotNull` and lookup/money/date literals have no confirmed export sample and are not generated.
 
 ### View Grid Control Operations
 - **set_dataverse_view_powerapps_grid_control** - **Set Dataverse View Power Apps Grid Control**: Adds, replaces, or reconfigures the Power Apps grid control (`Microsoft.PowerApps.PowerAppsOneGrid`) on a specific system view by editing its LayoutXML — the same per-view assignment shown in the maker portal's view designer "Components" panel, distinct from the table-wide grid control setting. Exposes the full documented parameter set (editing, filtering/sorting/grouping/aggregation, selection, jump bar, pagination, choice colors, status/type icons, navigation types, reflow behavior, list-view options, lookup filter behavior, customizer control, and which of web/mobile/tablet form factors show the control). Requires `confirmUpdate: true`; publishing remains separate via `publish_dataverse_customizations`.
@@ -1282,6 +1299,88 @@ await use_mcp_tool("dataverse", "delete_dataverse_businessunit", {
   businessUnitId: "business-unit-guid-here"
 });
 ```
+
+### Creating a Business Process Flow
+
+Enable the table first (one-way), then create the process from a compact definition. Stage references (`nextStage`, branch targets, `elseStage`, `relationship.sourceStage`) use stage names, or stage ids when names repeat. `nextStage` defaults to the next stage in the list; set it explicitly for stages that sit on a side path and rejoin the main path later.
+
+```json
+// 1. Enable the table for business process flows
+{
+  "logicalName": "ddsol_svc_case",
+  "isBusinessProcessEnabled": true
+}
+
+// 2. create_business_process_flow
+{
+  "name": "Case Resolution Process",
+  "uniqueName": "ddsol_caseresolutionprocess",
+  "primaryEntity": "ddsol_svc_case",
+  "processOrder": 100,
+  "definition": {
+    "segments": [
+      {
+        "entity": "ddsol_svc_case",
+        "stages": [
+          {
+            "name": "New",
+            "category": "Identify",
+            "steps": [{ "column": "ddsol_bpfcheck_issubmissioncomplete", "required": true }]
+          },
+          {
+            "name": "Key User Review",
+            "category": "Qualify",
+            "nextStage": "Customer Review",
+            "steps": [{ "column": "ddsol_responsiblepartycode" }],
+            "branches": [
+              { "column": "ddsol_responsiblepartycode", "value": 275040000, "nextStage": "Resolution", "label": "IF Handled by Customer" }
+            ],
+            "elseStage": "Issue Resolution"
+          },
+          {
+            "name": "Resolution",
+            "category": "Resolve",
+            "nextStage": "Customer Review",
+            "steps": [{ "column": "ddsol_resolution" }, { "column": "ddsol_resolutioncategorycode", "required": true }]
+          }
+        ]
+      },
+      {
+        "entity": "msdyn_projectissue",
+        "stages": [
+          {
+            "name": "Issue Resolution",
+            "category": "Resolve",
+            "nextStage": "Customer Review",
+            "relationship": {
+              "sourceStage": "Key User Review",
+              "relationshipName": "ddsol_msdyn_projectissue_sourcecaseid_ddsol_svc_case",
+              "attributeName": "ddsol_sourcecaseid"
+            },
+            "steps": [{ "column": "ddsol_bpfstagecode", "label": "Issue BPF Stage", "required": true }]
+          }
+        ]
+      },
+      {
+        "entity": "ddsol_svc_case",
+        "stages": [
+          { "name": "Customer Review", "category": "Approval", "steps": [{ "column": "ddsol_reviewresultcode" }] },
+          { "name": "Closure", "category": "Close", "steps": [{ "column": "statuscode" }] }
+        ]
+      }
+    ]
+  }
+}
+
+// 3. activate_business_process_flow → generates table ddsol_caseresolutionprocess (processstage rows exist since the create)
+{ "workflowId": "<workflowid returned by create>" }
+
+// 4. grant_table_privileges on ddsol_caseresolutionprocess for every role that runs the process
+
+// Later: deactivate_business_process_flow → update_business_process_flow (definition or xaml) → activate_business_process_flow
+```
+
+Step `type`/`controlDisplayName` and branch `valueType` are looked up from the column metadata; pass them yourself (or `classId`) with `resolveColumnsFromMetadata: false` when working offline. `build_business_process_flow_xaml` returns the generated XAML without writing anything, and `get_business_process_flow` returns the stored XAML of an existing process so it can be cloned.
 
 ### Exporting Solution Schema
 

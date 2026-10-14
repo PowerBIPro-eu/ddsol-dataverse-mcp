@@ -29,6 +29,7 @@
     "start": "node build/index.js",
     "test": "npm run build && node test/unit/run.mjs",
     "test:unit": "node test/unit/run.mjs",
+    "test:bpf-xaml": "node test/test-bpf-xaml-roundtrip.mjs",
     "test:server": "node test/test-server.cjs",
     "test:auth": "node test/test-auth.cjs",
     "release": "npm run build && npm version patch && npm publish && git push && git push --tags",
