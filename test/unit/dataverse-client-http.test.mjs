@@ -81,7 +81,7 @@ test('writes ask for error details and surface the full error body', async () =>
   });
   const patch = requests.find((request) => request.method === 'PATCH');
   assert.equal(patch.headers.authorization, 'Bearer test-access-token');
-  assert.match(patch.headers.prefer, /^odata\.include-annotations="Microsoft\.PowerApps\.CDS\.ErrorDetails\*/);
+  assert.equal(patch.headers.prefer, 'odata.include-annotations="Microsoft.PowerApps.CDS.*"');
 });
 
 test('reads are left without the error-detail preference', async () => {

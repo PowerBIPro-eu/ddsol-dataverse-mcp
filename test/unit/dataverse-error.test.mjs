@@ -93,3 +93,18 @@ test('the error-detail preference is added without dropping other preferences', 
   assert.equal(withErrorDetailPreference('return=representation'), `return=representation,${ERROR_DETAIL_PREFERENCE}`);
   assert.equal(withErrorDetailPreference('odata.include-annotations="*"'), 'odata.include-annotations="*"');
 });
+
+test('the error-detail preference only uses wildcards Dataverse accepts', () => {
+  // Dataverse answers a write with an empty HTTP 500 when an annotation filter contains a
+  // partial-name wildcard such as "Microsoft.PowerApps.CDS.ErrorDetails*" (0.2.44).
+  const filter = ERROR_DETAIL_PREFERENCE.match(/^odata\.include-annotations="([^"]+)"$/);
+  assert.ok(filter, 'the preference is a single odata.include-annotations value');
+  for (const term of filter[1].split(',')) {
+    const name = term.replace(/^-/, '');
+    assert.ok(
+      name === '*' || /^[A-Za-z0-9_]+(\.[A-Za-z0-9_]+)*(\.\*)?$/.test(name),
+      `"${term}" must be "*", a full annotation name or "<namespace>.*"`
+    );
+  }
+  assert.equal(ERROR_DETAIL_PREFERENCE, 'odata.include-annotations="Microsoft.PowerApps.CDS.*"');
+});

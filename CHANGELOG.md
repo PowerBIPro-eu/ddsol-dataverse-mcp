@@ -5,6 +5,11 @@ All notable changes to the Dataverse MCP Server project will be documented in th
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+- **Writes no longer fail with an empty HTTP 500.** Since 0.2.44 every non-GET request carried `Prefer: odata.include-annotations="Microsoft.PowerApps.CDS.ErrorDetails*,…"`. Dataverse rejects the partial-name wildcard `ErrorDetails*` with an empty HTTP 500, so every create, update, delete, publish and action call failed while reads kept working. The preference is now `odata.include-annotations="Microsoft.PowerApps.CDS.*"`, which returns the same error-detail annotations (including `InnerError.Message`) and leaves successful responses unchanged. A unit test now rejects partial-name wildcards in the preference.
+
 ## [0.2.44]
 
 ### Fixed
