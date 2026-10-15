@@ -9,11 +9,12 @@ const CDS_ANNOTATION_PREFIX = '@Microsoft.PowerApps.CDS.';
 
 /**
  * Dataverse only returns its error-detail annotations when the request asks for them.
- * Listing these annotations (rather than "*") leaves successful responses unchanged.
+ * Limiting the preference to the CDS namespace (rather than "*") leaves successful
+ * responses unchanged. A wildcard must be "*" or "<namespace>.*": Dataverse answers a
+ * write whose preference contains a partial-name wildcard such as "ErrorDetails*" with
+ * an empty HTTP 500.
  */
-export const ERROR_DETAIL_PREFERENCE =
-  'odata.include-annotations="Microsoft.PowerApps.CDS.ErrorDetails*,Microsoft.PowerApps.CDS.HelpLink,' +
-  'Microsoft.PowerApps.CDS.TraceText,Microsoft.PowerApps.CDS.InnerError.Message"';
+export const ERROR_DETAIL_PREFERENCE = 'odata.include-annotations="Microsoft.PowerApps.CDS.*"';
 
 /** Adds the error-detail preference to a Prefer header value, keeping existing preferences. */
 export function withErrorDetailPreference(existing?: string): string {

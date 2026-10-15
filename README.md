@@ -2321,7 +2321,7 @@ x-ms-service-request-id: 00000000-0000-0000-0000-000000000000
 ```
 
 - The first line is unchanged, so anything that parses it keeps working.
-- Write requests ask Dataverse for its error-detail annotations (`Prefer: odata.include-annotations="Microsoft.PowerApps.CDS.ErrorDetails*,..."`), which it only returns on request; successful responses are unaffected.
+- Write requests ask Dataverse for its error-detail annotations (`Prefer: odata.include-annotations="Microsoft.PowerApps.CDS.*"`), which it only returns on request; successful responses are unaffected.
 - Each field is truncated to 2,000 characters. Request bodies and headers, other than the request ID, are never included.
 - Failures without a Dataverse error body read `Dataverse request failed with HTTP <status>.`, `Dataverse request failed: <network error>` or `Dataverse request timed out`.
 - A read that fails with "does not exist" (`0x80040217` or `0x80060888`) within a minute of a write is retried once after 3 seconds, because new components can take a moment to become visible.
