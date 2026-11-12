@@ -234,6 +234,11 @@ This MCP server provides comprehensive tools for Dataverse schema management:
 - **generate_mermaid_diagram** ✅ **Fully Tested** - **Generate Mermaid Diagram**: Generates a Mermaid entity relationship diagram from an exported schema JSON file. Creates visual documentation of your data model with tables, columns, and relationships. Perfect for documentation, presentations, and understanding data structure.
 
 ### Business Record Operations
+- **get_dataverse_record** - **Get Dataverse Record**: Reads one row of any table by `recordId` (GUID) or `alternateKey` (for example `{ "accountnumber": "A-1001" }`), with optional `select` and `expand`. Read-only.
+- **query_dataverse_records** - **Query Dataverse Records**: Reads rows of any entity set (business tables and system tables such as `systemusers`, `solutions`, `workflows`, `sdkmessageprocessingsteps`) with OData options (`select`, `filter`, `orderby`, `expand`, `top`, `count`, `apply`) or a `fetchXml` query. Follows Dataverse paging up to `maxRecords` (default 50, at most 5000) and returns a `nextLink` to continue; FetchXML results return `nextPage` and `pagingCookie` for the fetch element's `page` and `paging-cookie` attributes. Read-only; a `nextLink` is only followed to the active environment.
+
+Both read tools include formatted values and lookup annotations (`<column>@OData.Community.Display.V1.FormattedValue`, `lookuplogicalname`, `associatednavigationproperty`) unless `includeFormattedValues` is `false`, and drop `@odata.etag`.
+
 - **create_dataverse_record** - **Create Dataverse Record**: Creates one record in an explicit plural entity set. Provide structural column logical names in `record`; use case-sensitive navigation-property names for lookup `@odata.bind` keys, such as `new_AccountId@odata.bind: "/accounts(<guid>)"`. Choice values are integers. The caller must set `confirmCreate: true` before the tool writes business data.
 - **create_dataverse_records** - **Create Dataverse Records**: Creates up to 25 records in one explicit entity set. Each returned Dataverse representation verifies its record was created. Requires `confirmWrite: true`.
 - **update_dataverse_records** - **Update Dataverse Records**: Updates up to 25 identified records in one explicit entity set and re-fetches every record to verify the write. Requires `confirmWrite: true`.

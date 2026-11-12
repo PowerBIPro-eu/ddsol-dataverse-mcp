@@ -5,6 +5,17 @@ All notable changes to the Dataverse MCP Server project will be documented in th
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.46]
+
+### Added
+- `query_dataverse_records`: a generic, read-only query over any entity set, with OData options (`select`, `filter`, `orderby`, `expand`, `top`, `count`, `apply`) or `fetchXml`. It follows `@odata.nextLink` up to `maxRecords` (default 50, at most 5000), returns `nextLink` to continue (only links to the active environment's Web API are followed, so the token never leaves it), and returns `nextPage` and the decoded `pagingCookie` for FetchXML paging.
+- `get_dataverse_record`: reads one row by GUID or alternate key, with `select` and `expand`.
+- Both tools return formatted values and lookup annotations by default (`includeFormattedValues`), drop `@odata.etag`, and carry the MCP `readOnlyHint` annotation.
+- `test/test-records-read-live.mjs`: a read-only live check of both tools (`DATAVERSE_URL=<environment> node test/test-records-read-live.mjs`).
+
+### Changed
+- `DataverseClient.get` accepts request headers.
+
 ## [0.2.45]
 
 ### Fixed
