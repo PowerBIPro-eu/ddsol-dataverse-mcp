@@ -164,6 +164,10 @@ import {
   deleteDataverseRecordsTool
 } from "./tools/record-tools.js";
 import {
+  getDataverseRecordTool,
+  queryDataverseRecordsTool
+} from "./tools/record-read-tools.js";
+import {
   registerWebAPIResources
 } from "./resources/webapi-resources.js";
 import {
@@ -392,6 +396,8 @@ listBusinessProcessFlowStagesTool(server, dataverseClient);
 buildBusinessProcessFlowXamlTool(server, dataverseClient);
 
 // Register record tools
+getDataverseRecordTool(server, dataverseClient);
+queryDataverseRecordsTool(server, dataverseClient);
 createDataverseRecordTool(server, dataverseClient);
 createDataverseRecordsTool(server, dataverseClient);
 updateDataverseRecordsTool(server, dataverseClient);

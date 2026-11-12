@@ -417,8 +417,9 @@ export class DataverseClient {
   }
 
   // Generic HTTP methods
-  async get<T = any>(endpoint: string, params?: Record<string, any>): Promise<T> {
-    return this.withReadRetry(async (headers) => {
+  async get<T = any>(endpoint: string, params?: Record<string, any>, additionalHeaders?: Record<string, string>): Promise<T> {
+    return this.withReadRetry(async (retryHeaders) => {
+      const headers = additionalHeaders || retryHeaders ? { ...additionalHeaders, ...retryHeaders } : undefined;
       const response: AxiosResponse<T> = await this.httpClient.get(endpoint, { params, headers });
       return response.data;
     });
